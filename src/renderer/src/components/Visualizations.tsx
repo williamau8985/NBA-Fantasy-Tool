@@ -103,6 +103,12 @@ export function Visualizations() {
           <Tooltip 
             formatter={(value) => [value, 'Players']}
             labelFormatter={(label) => `Score Range: ${label}`}
+            contentStyle={{
+              backgroundColor: 'hsl(var(--background))',
+              border: '1px solid hsl(var(--border))',
+              borderRadius: '6px',
+              color: 'hsl(var(--foreground))'
+            }}
           />
           <Bar dataKey="count" fill="hsl(var(--primary))" />
         </BarChart>

@@ -15,6 +15,11 @@ function createWindow(): void {
     height: 1000,
     show: false,
     autoHideMenuBar: true,
+    frame: true,
+    backgroundColor: '#0f172a', // Dark background color
+    titleBarStyle: process.platform === 'darwin' ? 'default' : 'default',
+    vibrancy: process.platform === 'darwin' ? 'appearance-based' : undefined,
+    webSecurity: false,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
