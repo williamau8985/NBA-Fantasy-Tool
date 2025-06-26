@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import { ControlPanel } from './components/ControlPanel'
 import { PlayerList } from './components/PlayerList'
 import { PlayerDetails } from './components/PlayerDetails'

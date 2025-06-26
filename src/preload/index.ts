@@ -4,7 +4,17 @@ import { electronAPI } from '@electron-toolkit/preload'
 // Custom APIs for renderer
 const api = {
   openFileDialog: () => ipcRenderer.invoke('dialog:openFile'),
-  saveFileDialog: () => ipcRenderer.invoke('dialog:saveFile')
+  saveFileDialog: () => ipcRenderer.invoke('dialog:saveFile'),
+  db: {
+    importCsv: (filePath: string) => ipcRenderer.invoke('db:importCsv', filePath),
+    getAllPlayers: () => ipcRenderer.invoke('db:getAllPlayers'),
+    getPlayersWithFilters: (filters: any) => ipcRenderer.invoke('db:getPlayersWithFilters', filters),
+    getPlayerByName: (name: string) => ipcRenderer.invoke('db:getPlayerByName', name),
+    getStatistics: () => ipcRenderer.invoke('db:getStatistics'),
+    updatePlayer: (id: number, updates: any) => ipcRenderer.invoke('db:updatePlayer', id, updates),
+    deletePlayer: (id: number) => ipcRenderer.invoke('db:deletePlayer', id),
+    getZColumns: () => ipcRenderer.invoke('db:getZColumns')
+  }
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

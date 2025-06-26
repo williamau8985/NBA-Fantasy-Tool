@@ -6,7 +6,7 @@ import { Progress } from './ui/progress'
 import { useNBAStore } from '../store/nbaStore'
 
 export function PlayerDetails() {
-  const { selectedPlayer, getPlayerRank, originalData } = useNBAStore()
+  const { selectedPlayer, getPlayerRank, filteredPlayers } = useNBAStore()
 
   if (!selectedPlayer) {
     return (
@@ -31,8 +31,11 @@ export function PlayerDetails() {
   }
 
   const getPercentile = (column: string, score: number) => {
-    if (!originalData.length) return 0
-    const values = originalData.map(p => p[column] || 0).filter(v => !isNaN(v))
+    // Use filtered players for percentile calculation
+    // In a real implementation, you might want to get all players from database
+    if (!filteredPlayers.length) return 0
+    const values = filteredPlayers.map(p => (p as any)[column] || 0).filter(v => !isNaN(v))
+    if (values.length === 0) return 0
     const rank = values.filter(v => v <= score).length
     return Math.round((rank / values.length) * 100)
   }
@@ -107,7 +110,7 @@ export function PlayerDetails() {
             <div className="space-y-4">
               {zColumns.map(column => {
                 const category = column.replace('z_', '').toUpperCase()
-                const score = selectedPlayer[column]
+                const score = selectedPlayer[column as keyof typeof selectedPlayer] as number
                 const percentile = getPercentile(column, score)
                 const scoreInfo = getZScoreInfo(score)
 
@@ -152,7 +155,7 @@ export function PlayerDetails() {
             <div className="space-y-3">
               {zColumns.map(column => {
                 const category = column.replace('z_', '').toUpperCase()
-                const score = selectedPlayer[column]
+                const score = selectedPlayer[column as keyof typeof selectedPlayer] as number
                 const contribution = (score / selectedPlayer.total_score) * 100
 
                 return (

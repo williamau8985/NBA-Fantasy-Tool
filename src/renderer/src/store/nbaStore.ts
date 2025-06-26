@@ -1,12 +1,21 @@
 import { create } from 'zustand'
-import Papa from 'papaparse'
 
 export interface Player {
+  id?: number
   PLAYER_NAME: string
   GP: number
   availability_rate: number
+  FT_PCT?: number
   total_score: number
-  [key: `z_${string}`]: number
+  z_pts: number
+  z_ast: number
+  z_reb: number
+  z_stl: number
+  z_blk: number
+  z_fg_pct: number
+  z_ft_pct: number
+  z_fg3m: number
+  z_tov: number
 }
 
 export interface Filters {
@@ -20,10 +29,8 @@ export interface Filters {
 
 interface NBAState {
   // Data
-  originalData: Player[]
   filteredPlayers: Player[]
   selectedPlayer: Player | null
-  csvFile: string | null
   
   // UI State
   isLoading: boolean
@@ -34,12 +41,14 @@ interface NBAState {
   availableCategories: string[]
   
   // Actions
-  loadCSV: (file: File) => Promise<void>
-  applyFilters: (newFilters: Partial<Filters>) => void
+  applyFilters: (newFilters: Partial<Filters>) => Promise<void>
   selectPlayer: (player: Player) => void
   getPlayerRank: (playerName: string) => number
-  getStatistics: () => string
+  getStatistics: () => Promise<string>
   exportFilteredData: () => void
+  loadInitialData: () => Promise<void>
+  updatePlayer: (id: number, updates: Partial<Player>) => Promise<void>
+  deletePlayer: (id: number) => Promise<void>
 }
 
 const initialFilters: Filters = {
@@ -53,123 +62,96 @@ const initialFilters: Filters = {
 
 export const useNBAStore = create<NBAState>((set, get) => ({
   // Initial state
-  originalData: [],
   filteredPlayers: [],
   selectedPlayer: null,
-  csvFile: null,
   isLoading: false,
   error: null,
   filters: initialFilters,
   availableCategories: [],
 
-  // Load CSV file
-  loadCSV: async (file: File) => {
+  // Load initial data from database
+  loadInitialData: async () => {
     set({ isLoading: true, error: null })
     
     try {
-      const text = await file.text()
+      // Get available z columns
+      const zColumns = await window.api.db.getZColumns()
+      set({ availableCategories: zColumns })
       
-      Papa.parse<Player>(text, {
-        header: true,
-        dynamicTyping: true,
-        skipEmptyLines: true,
-        complete: (results) => {
-          if (results.errors.length > 0) {
-            set({ error: `CSV parsing errors: ${results.errors.map(e => e.message).join(', ')}`, isLoading: false })
-            return
-          }
-          
-          const data = results.data.filter(row => row.PLAYER_NAME) // Filter out empty rows
-          const zColumns = Object.keys(data[0] || {}).filter(col => col.startsWith('z_'))
-          
-          // Calculate initial total scores
-          const dataWithScores = data.map(player => ({
-            ...player,
-            total_score: zColumns.reduce((sum, col) => sum + (player[col] || 0), 0)
-          }))
-          
-          // Sort by total score
-          dataWithScores.sort((a, b) => b.total_score - a.total_score)
-          
-          set({
-            originalData: dataWithScores,
-            filteredPlayers: dataWithScores,
-            availableCategories: zColumns,
-            csvFile: file.name,
-            isLoading: false,
-            filters: initialFilters
-          })
-        },
-        error: (error) => {
-          set({ error: `Failed to parse CSV: ${error.message}`, isLoading: false })
-        }
+      // Load all players
+      const players = await window.api.db.getAllPlayers()
+      set({ 
+        filteredPlayers: players,
+        isLoading: false 
       })
     } catch (error) {
-      set({ error: `Failed to load file: ${error instanceof Error ? error.message : 'Unknown error'}`, isLoading: false })
+      set({ 
+        error: `Failed to load data: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        isLoading: false 
+      })
     }
   },
 
-  // Apply filters
-  applyFilters: (newFilters: Partial<Filters>) => {
-    const { originalData, filters } = get()
+  // Apply filters using database queries
+  applyFilters: async (newFilters: Partial<Filters>) => {
+    const { filters } = get()
     const updatedFilters = { ...filters, ...newFilters }
     
-    if (originalData.length === 0) return
+    set({ isLoading: true, filters: updatedFilters })
     
-    // Step 1: Recalculate scores with punts
-    const zColumns = Object.keys(originalData[0]).filter(col => col.startsWith('z_'))
-    const nonPuntedCols = zColumns.filter(col => !updatedFilters.punts.includes(col))
-    
-    let processedData = originalData.map(player => ({
-      ...player,
-      total_score: nonPuntedCols.reduce((sum, col) => sum + (player[col] || 0), 0)
-    }))
-    
-    // Sort by new total score
-    processedData.sort((a, b) => b.total_score - a.total_score)
-    
-    // Step 2: Apply filters
-    let filteredData = processedData
-    
-    if (updatedFilters.minGames) {
-      const minGames = parseInt(updatedFilters.minGames)
-      if (!isNaN(minGames)) {
-        filteredData = filteredData.filter(p => p.GP >= minGames)
+    try {
+      // Convert filters to database format
+      const dbFilters: any = {}
+      
+      if (updatedFilters.punts.length > 0) {
+        dbFilters.punts = updatedFilters.punts
       }
-    }
-    
-    if (updatedFilters.minAvail) {
-      const minAvail = parseFloat(updatedFilters.minAvail) / 100
-      if (!isNaN(minAvail)) {
-        filteredData = filteredData.filter(p => p.availability_rate >= minAvail)
+      
+      if (updatedFilters.minGames) {
+        const minGames = parseInt(updatedFilters.minGames)
+        if (!isNaN(minGames)) {
+          dbFilters.minGames = minGames
+        }
       }
-    }
-    
-    if (updatedFilters.minScore) {
-      const minScore = parseFloat(updatedFilters.minScore)
-      if (!isNaN(minScore)) {
-        filteredData = filteredData.filter(p => p.total_score >= minScore)
+      
+      if (updatedFilters.minAvail) {
+        const minAvail = parseFloat(updatedFilters.minAvail) / 100
+        if (!isNaN(minAvail)) {
+          dbFilters.minAvail = minAvail
+        }
       }
+      
+      if (updatedFilters.minScore) {
+        const minScore = parseFloat(updatedFilters.minScore)
+        if (!isNaN(minScore)) {
+          dbFilters.minScore = minScore
+        }
+      }
+      
+      if (updatedFilters.searchTerm) {
+        dbFilters.searchTerm = updatedFilters.searchTerm.trim()
+      }
+      
+      // Apply view limit
+      if (updatedFilters.view === 'top20') {
+        dbFilters.limit = 20
+      } else if (updatedFilters.view === 'top50') {
+        dbFilters.limit = 50
+      }
+      
+      const players = await window.api.db.getPlayersWithFilters(dbFilters)
+      
+      set({ 
+        filteredPlayers: players,
+        isLoading: false 
+      })
+      
+    } catch (error) {
+      set({ 
+        error: `Failed to apply filters: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        isLoading: false 
+      })
     }
-    
-    if (updatedFilters.searchTerm) {
-      const searchTerm = updatedFilters.searchTerm.toLowerCase().trim()
-      filteredData = filteredData.filter(p => 
-        p.PLAYER_NAME.toLowerCase().includes(searchTerm)
-      )
-    }
-    
-    // Step 3: Apply view limit
-    if (updatedFilters.view === 'top20') {
-      filteredData = filteredData.slice(0, 20)
-    } else if (updatedFilters.view === 'top50') {
-      filteredData = filteredData.slice(0, 50)
-    }
-    
-    set({
-      filters: updatedFilters,
-      filteredPlayers: filteredData
-    })
   },
 
   // Select player
@@ -184,61 +166,43 @@ export const useNBAStore = create<NBAState>((set, get) => ({
     return index + 1
   },
 
-  // Get statistics
-  getStatistics: () => {
-    const { filteredPlayers, csvFile } = get()
-    
-    if (filteredPlayers.length === 0) return "No data available."
-    
-    const stats: string[] = []
-    stats.push("📊 NBA DRAFT RANKING STATISTICS")
-    stats.push("========================================")
-    stats.push(`Displaying statistics for ${filteredPlayers.length} players.`)
-    stats.push(`Data Source: ${csvFile || 'Unknown'}\n`)
-    
-    // Total Score Statistics
-    const scores = filteredPlayers.map(p => p.total_score)
-    const meanScore = scores.reduce((a, b) => a + b, 0) / scores.length
-    const sortedScores = [...scores].sort((a, b) => a - b)
-    const medianScore = sortedScores[Math.floor(sortedScores.length / 2)]
-    const minScore = Math.min(...scores)
-    const maxScore = Math.max(...scores)
-    
-    stats.push("🏆 TOTAL SCORE STATISTICS")
-    stats.push("----------------------------------------")
-    stats.push(`Mean Score: ${meanScore.toFixed(2)}`)
-    stats.push(`Median Score: ${medianScore.toFixed(2)}`)
-    stats.push(`Range: ${minScore.toFixed(2)} to ${maxScore.toFixed(2)}\n`)
-    
-    // Games Played Statistics
-    const games = filteredPlayers.map(p => p.GP)
-    const meanGames = games.reduce((a, b) => a + b, 0) / games.length
-    const players70Plus = filteredPlayers.filter(p => p.GP >= 70).length
-    const players50Plus = filteredPlayers.filter(p => p.GP >= 50).length
-    const playersUnder30 = filteredPlayers.filter(p => p.GP < 30).length
-    
-    stats.push("🏀 GAMES PLAYED STATISTICS")
-    stats.push("----------------------------------------")
-    stats.push(`Mean Games: ${meanGames.toFixed(1)}`)
-    stats.push(`Players with 70+ games: ${players70Plus}`)
-    stats.push(`Players with 50+ games: ${players50Plus}`)
-    stats.push(`Players with <30 games: ${playersUnder30}\n`)
-    
-    // Availability Statistics
-    const availability = filteredPlayers.map(p => p.availability_rate)
-    const meanAvail = availability.reduce((a, b) => a + b, 0) / availability.length
-    const players90Plus = filteredPlayers.filter(p => p.availability_rate >= 0.9).length
-    const players80Plus = filteredPlayers.filter(p => p.availability_rate >= 0.8).length
-    const playersUnder60 = filteredPlayers.filter(p => p.availability_rate < 0.6).length
-    
-    stats.push("📈 AVAILABILITY STATISTICS")
-    stats.push("----------------------------------------")
-    stats.push(`Mean Availability: ${(meanAvail * 100).toFixed(1)}%`)
-    stats.push(`Players with 90%+ availability: ${players90Plus}`)
-    stats.push(`Players with 80%+ availability: ${players80Plus}`)
-    stats.push(`Players with <60% availability: ${playersUnder60}`)
-    
-    return stats.join('\n')
+  // Get statistics from database
+  getStatistics: async () => {
+    try {
+      const stats = await window.api.db.getStatistics()
+      
+      const statLines: string[] = []
+      statLines.push("📊 NBA DRAFT RANKING STATISTICS")
+      statLines.push("========================================")
+      statLines.push(`Total Players: ${stats.total_players}`)
+      statLines.push(`Data Source: SQLite Database\n`)
+      
+      // Total Score Statistics
+      statLines.push("🏆 TOTAL SCORE STATISTICS")
+      statLines.push("----------------------------------------")
+      statLines.push(`Mean Score: ${stats.avg_score?.toFixed(2) || 'N/A'}`)
+      statLines.push(`Range: ${stats.min_score?.toFixed(2) || 'N/A'} to ${stats.max_score?.toFixed(2) || 'N/A'}\n`)
+      
+      // Games Played Statistics
+      statLines.push("🏀 GAMES PLAYED STATISTICS")
+      statLines.push("----------------------------------------")
+      statLines.push(`Mean Games: ${stats.avg_games?.toFixed(1) || 'N/A'}`)
+      statLines.push(`Players with 70+ games: ${stats.players_70_plus_games || 0}`)
+      statLines.push(`Players with 50+ games: ${stats.players_50_plus_games || 0}`)
+      statLines.push(`Players with <30 games: ${stats.players_under_30_games || 0}\n`)
+      
+      // Availability Statistics
+      statLines.push("📈 AVAILABILITY STATISTICS")
+      statLines.push("----------------------------------------")
+      statLines.push(`Mean Availability: ${((stats.avg_availability || 0) * 100).toFixed(1)}%`)
+      statLines.push(`Players with 90%+ availability: ${stats.players_90_plus_avail || 0}`)
+      statLines.push(`Players with 80%+ availability: ${stats.players_80_plus_avail || 0}`)
+      statLines.push(`Players with <60% availability: ${stats.players_under_60_avail || 0}`)
+      
+      return statLines.join('\n')
+    } catch (error) {
+      return `Error loading statistics: ${error instanceof Error ? error.message : 'Unknown error'}`
+    }
   },
 
   // Export filtered data
@@ -250,8 +214,19 @@ export const useNBAStore = create<NBAState>((set, get) => ({
       return
     }
     
-    const csv = Papa.unparse(filteredPlayers)
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    // Convert to CSV format
+    const headers = Object.keys(filteredPlayers[0]).filter(key => key !== 'id')
+    const csvContent = [
+      headers.join(','),
+      ...filteredPlayers.map(player => 
+        headers.map(header => {
+          const value = (player as any)[header]
+          return typeof value === 'string' ? `"${value}"` : value
+        }).join(',')
+      )
+    ].join('\n')
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     const url = URL.createObjectURL(blob)
     
@@ -262,5 +237,57 @@ export const useNBAStore = create<NBAState>((set, get) => ({
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  },
+
+  // Update player in database
+  updatePlayer: async (id: number, updates: Partial<Player>) => {
+    set({ isLoading: true })
+    
+    try {
+      await window.api.db.updatePlayer(id, updates)
+      
+      // Refresh the filtered players list
+      await get().applyFilters({})
+      
+      // Update selected player if it's the one being updated
+      const { selectedPlayer } = get()
+      if (selectedPlayer && selectedPlayer.id === id) {
+        const updatedPlayer = await window.api.db.getPlayerByName(selectedPlayer.PLAYER_NAME)
+        if (updatedPlayer) {
+          set({ selectedPlayer: updatedPlayer })
+        }
+      }
+      
+    } catch (error) {
+      set({ 
+        error: `Failed to update player: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        isLoading: false 
+      })
+    }
+  },
+
+  // Delete player from database
+  deletePlayer: async (id: number) => {
+    set({ isLoading: true })
+    
+    try {
+      await window.api.db.deletePlayer(id)
+      
+      // Clear selected player if it was deleted
+      const { selectedPlayer } = get()
+      if (selectedPlayer && selectedPlayer.id === id) {
+        set({ selectedPlayer: null })
+      }
+      
+      // Refresh the filtered players list
+      await get().applyFilters({})
+      
+    } catch (error) {
+      set({ 
+        error: `Failed to delete player: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        isLoading: false 
+      })
+    }
   }
 }))

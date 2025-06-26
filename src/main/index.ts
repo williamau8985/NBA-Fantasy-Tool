@@ -2,6 +2,11 @@ import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { DatabaseService } from './database'
+import Papa from 'papaparse'
+import fs from 'fs'
+
+let dbService: DatabaseService
 
 function createWindow(): void {
   // Create the browser window.
@@ -37,6 +42,17 @@ function createWindow(): void {
   }
 }
 
+// Database initialization
+async function initializeDatabase() {
+  dbService = new DatabaseService()
+  try {
+    await dbService.initialize()
+    console.log('Database initialized successfully')
+  } catch (error) {
+    console.error('Failed to initialize database:', error)
+  }
+}
+
 // IPC handlers for file operations
 ipcMain.handle('dialog:openFile', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog({
@@ -68,12 +84,111 @@ ipcMain.handle('dialog:saveFile', async () => {
   return null
 })
 
+// Database IPC handlers
+ipcMain.handle('db:importCsv', async (_, filePath: string) => {
+  try {
+    const csvContent = fs.readFileSync(filePath, 'utf8')
+    
+    return new Promise((resolve, reject) => {
+      Papa.parse(csvContent, {
+        header: true,
+        dynamicTyping: true,
+        skipEmptyLines: true,
+        complete: async (results) => {
+          if (results.errors.length > 0) {
+            reject(new Error(`CSV parsing errors: ${results.errors.map(e => e.message).join(', ')}`))
+            return
+          }
+          
+          try {
+            const data = results.data.filter((row: any) => row.PLAYER_NAME)
+            const zColumns = ['z_pts', 'z_ast', 'z_reb', 'z_stl', 'z_blk', 'z_fg_pct', 'z_ft_pct', 'z_fg3m', 'z_tov']
+            
+            // Calculate total scores
+            const dataWithScores = data.map((player: any) => ({
+              ...player,
+              total_score: zColumns.reduce((sum, col) => sum + (player[col] || 0), 0)
+            }))
+            
+            await dbService.importFromCSV(dataWithScores)
+            resolve({ success: true, count: dataWithScores.length })
+          } catch (error) {
+            reject(error)
+          }
+        },
+        error: (error) => {
+          reject(new Error(`Failed to parse CSV: ${error.message}`))
+        }
+      })
+    })
+  } catch (error) {
+    throw new Error(`Failed to read file: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+})
+
+ipcMain.handle('db:getAllPlayers', async () => {
+  try {
+    return await dbService.getAllPlayers()
+  } catch (error) {
+    throw new Error(`Failed to get players: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+})
+
+ipcMain.handle('db:getPlayersWithFilters', async (_, filters) => {
+  try {
+    return await dbService.getPlayersWithFilters(filters)
+  } catch (error) {
+    throw new Error(`Failed to get filtered players: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+})
+
+ipcMain.handle('db:getPlayerByName', async (_, name: string) => {
+  try {
+    return await dbService.getPlayerByName(name)
+  } catch (error) {
+    throw new Error(`Failed to get player: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+})
+
+ipcMain.handle('db:getStatistics', async () => {
+  try {
+    return await dbService.getStatistics()
+  } catch (error) {
+    throw new Error(`Failed to get statistics: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+})
+
+ipcMain.handle('db:updatePlayer', async (_, id: number, updates) => {
+  try {
+    await dbService.updatePlayer(id, updates)
+    return { success: true }
+  } catch (error) {
+    throw new Error(`Failed to update player: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+})
+
+ipcMain.handle('db:deletePlayer', async (_, id: number) => {
+  try {
+    await dbService.deletePlayer(id)
+    return { success: true }
+  } catch (error) {
+    throw new Error(`Failed to delete player: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+})
+
+ipcMain.handle('db:getZColumns', () => {
+  return dbService.getZColumns()
+})
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.nba.fantasy.tool')
+
+  // Initialize database
+  await initializeDatabase()
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
@@ -94,8 +209,20 @@ app.whenReady().then(() => {
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
-app.on('window-all-closed', () => {
+app.on('window-all-closed', async () => {
+  // Close database connection
+  if (dbService) {
+    await dbService.close()
+  }
+  
   if (process.platform !== 'darwin') {
     app.quit()
+  }
+})
+
+app.on('before-quit', async () => {
+  // Close database connection
+  if (dbService) {
+    await dbService.close()
   }
 })

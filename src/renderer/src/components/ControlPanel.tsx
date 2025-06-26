@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
@@ -9,7 +9,7 @@ import { Separator } from './ui/separator'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog'
 import { ScrollArea } from './ui/scroll-area'
 import { useNBAStore } from '../store/nbaStore'
-import { Upload, RotateCcw, Download, BarChart3, Info } from 'lucide-react'
+import { RotateCcw, Download, BarChart3, Info, Database } from 'lucide-react'
 
 export function ControlPanel() {
   const {
@@ -17,26 +17,16 @@ export function ControlPanel() {
     availableCategories,
     isLoading,
     error,
-    loadCSV,
     applyFilters,
     exportFilteredData,
-    getStatistics
+    getStatistics,
+    loadInitialData
   } = useNBAStore()
 
-  const handleFileUpload = async () => {
-    try {
-      const filePath = await window.api.openFileDialog()
-      if (filePath) {
-        // Convert file path to File object for our store
-        const response = await fetch(`file://${filePath}`)
-        const blob = await response.blob()
-        const file = new File([blob], filePath.split('/').pop() || 'file.csv', { type: 'text/csv' })
-        loadCSV(file)
-      }
-    } catch (error) {
-      console.error('Error opening file:', error)
-    }
-  }
+  // Load initial data when component mounts
+  useEffect(() => {
+    loadInitialData()
+  }, [loadInitialData])
 
   const handleFilterChange = (key: keyof typeof filters, value: any) => {
     applyFilters({ [key]: value })
@@ -60,28 +50,32 @@ export function ControlPanel() {
     })
   }
 
+  const [statisticsText, setStatisticsText] = useState<string>('')
+
+  const loadStatistics = async () => {
+    const stats = await getStatistics()
+    setStatisticsText(stats)
+  }
+
   return (
     <div className="space-y-6">
-      {/* File Operations */}
+      {/* Database Status */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Upload className="h-4 w-4" />
-            File Operations
+            <Database className="h-4 w-4" />
+            Database Status
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <Button 
-            onClick={handleFileUpload}
-            disabled={isLoading}
-            className="w-full"
-          >
-            {isLoading ? 'Loading...' : 'Load CSV File'}
-          </Button>
+        <CardContent>
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+            <span className="text-sm text-muted-foreground">SQLite Database Connected</span>
+          </div>
           <Button
             variant="outline"
             onClick={exportFilteredData}
-            className="w-full"
+            className="w-full mt-3"
           >
             <Download className="mr-2 h-4 w-4" />
             Export Filtered Data
@@ -129,7 +123,7 @@ export function ControlPanel() {
           
           <Dialog>
             <DialogTrigger asChild>
-              <Button variant="outline" className="w-full">
+              <Button variant="outline" className="w-full" onClick={loadStatistics}>
                 <Info className="mr-2 h-4 w-4" />
                 Show Statistics
               </Button>
@@ -138,12 +132,12 @@ export function ControlPanel() {
               <DialogHeader>
                 <DialogTitle>📊 NBA Draft Statistics</DialogTitle>
                 <DialogDescription>
-                  Comprehensive statistics for the current filtered dataset
+                  Comprehensive statistics from the SQLite database
                 </DialogDescription>
               </DialogHeader>
               <ScrollArea className="h-96">
                 <pre className="text-sm font-mono whitespace-pre-wrap">
-                  {getStatistics()}
+                  {statisticsText || 'Loading statistics...'}
                 </pre>
               </ScrollArea>
             </DialogContent>
