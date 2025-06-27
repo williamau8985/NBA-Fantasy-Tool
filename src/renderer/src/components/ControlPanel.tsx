@@ -9,7 +9,75 @@ import { Separator } from './ui/separator'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog'
 import { ScrollArea } from './ui/scroll-area'
 import { useNBAStore } from '../store/nbaStore'
-import { RotateCcw, Download, BarChart3, Info, Database } from 'lucide-react'
+import { RotateCcw, Download, BarChart3, Info, Database, Plus, Minus } from 'lucide-react'
+
+// Custom Number Input Component
+interface NumberInputProps {
+  id: string
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  min?: number
+  max?: number
+  step?: number
+}
+
+function NumberInput({ id, value, onChange, placeholder, min = 0, max = 999, step = 1 }: NumberInputProps) {
+  const handleIncrement = () => {
+    const currentValue = parseFloat(value) || 0
+    const newValue = Math.min(max, currentValue + step)
+    onChange(newValue.toString())
+  }
+
+  const handleDecrement = () => {
+    const currentValue = parseFloat(value) || 0
+    const newValue = Math.max(min, currentValue - step)
+    onChange(newValue.toString())
+  }
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputValue = e.target.value
+    // Allow empty string or valid numbers
+    if (inputValue === '' || (!isNaN(parseFloat(inputValue)) && isFinite(parseFloat(inputValue)))) {
+      onChange(inputValue)
+    }
+  }
+
+  return (
+    <div className="flex w-full items-center gap-2">
+      <Input
+        id={id}
+        type="text"
+        placeholder={placeholder}
+        value={value}
+        onChange={handleInputChange}
+        className="flex-1"
+      />
+      <div className="flex">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-10 w-8 rounded-r-none border-r-0"
+          onClick={handleDecrement}
+          disabled={parseFloat(value) <= min}
+        >
+          <Minus className="h-3 w-3" />
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-10 w-8 rounded-l-none"
+          onClick={handleIncrement}
+          disabled={parseFloat(value) >= max}
+        >
+          <Plus className="h-3 w-3" />
+        </Button>
+      </div>
+    </div>
+  )
+}
 
 export function ControlPanel() {
   const {
@@ -121,6 +189,30 @@ export function ControlPanel() {
             </Button>
           </div>
           
+          <div className="grid grid-cols-3 gap-2">
+            <Button
+              variant={filters.view === 'top100' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => handleFilterChange('view', 'top100')}
+            >
+              Top 100
+            </Button>
+            <Button
+              variant={filters.view === 'top150' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => handleFilterChange('view', 'top150')}
+            >
+              Top 150
+            </Button>
+            <Button
+              variant={filters.view === 'top200' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => handleFilterChange('view', 'top200')}
+            >
+              Top 200
+            </Button>
+          </div>
+          
           <Dialog>
             <DialogTrigger asChild>
               <Button variant="outline" className="w-full" onClick={loadStatistics}>
@@ -155,27 +247,63 @@ export function ControlPanel() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {availableCategories.map(category => {
-                const displayName = category.replace('z_', '').toUpperCase()
-                return (
-                  <div key={category} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={category}
-                      checked={filters.punts.includes(category)}
-                      onCheckedChange={(checked) => 
-                        handlePuntChange(category, checked as boolean)
-                      }
-                    />
-                    <Label 
-                      htmlFor={category}
-                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                {availableCategories.map(category => {
+                  let displayName = category.replace('z_', '').toUpperCase()
+                  // Convert percentage categories to use % symbol
+                  if (displayName === 'FT_PCT') displayName = 'FT%'
+                  if (displayName === 'FG_PCT') displayName = 'FG%'
+                  
+                  const isSelected = filters.punts.includes(category)
+                  
+                  return (
+                    <div 
+                      key={category} 
+                      className={`
+                        flex items-center space-x-2 p-2 rounded-md border transition-colors cursor-pointer
+                        ${isSelected 
+                          ? 'bg-primary/10 border-primary text-primary' 
+                          : 'bg-background border-border hover:bg-muted/50'
+                        }
+                      `}
+                      onClick={() => handlePuntChange(category, !isSelected)}
                     >
-                      {displayName}
-                    </Label>
+                      <Checkbox
+                        id={category}
+                        checked={isSelected}
+                        onCheckedChange={(checked) => 
+                          handlePuntChange(category, checked as boolean)
+                        }
+                      />
+                      <Label 
+                        htmlFor={category}
+                        className="text-xs font-medium leading-none cursor-pointer flex-1"
+                      >
+                        {displayName}
+                      </Label>
+                    </div>
+                  )
+                })}
+              </div>
+              
+              {filters.punts.length > 0 && (
+                <div className="pt-2 border-t">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      Punting {filters.punts.length} categor{filters.punts.length === 1 ? 'y' : 'ies'}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => applyFilters({ punts: [] })}
+                      className="h-6 px-2 text-xs"
+                    >
+                      Clear All
+                    </Button>
                   </div>
-                )
-              })}
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -189,35 +317,40 @@ export function ControlPanel() {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="minGames">Min Games Played</Label>
-            <Input
+            <NumberInput
               id="minGames"
-              type="number"
-              placeholder="e.g., 41"
               value={filters.minGames}
-              onChange={(e) => handleFilterChange('minGames', e.target.value)}
+              onChange={(value) => handleFilterChange('minGames', value)}
+              placeholder="e.g., 41"
+              min={0}
+              max={82}
+              step={1}
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="minAvail">Min Availability %</Label>
-            <Input
+            <NumberInput
               id="minAvail"
-              type="number"
-              placeholder="e.g., 50"
               value={filters.minAvail}
-              onChange={(e) => handleFilterChange('minAvail', e.target.value)}
+              onChange={(value) => handleFilterChange('minAvail', value)}
+              placeholder="e.g., 50"
+              min={0}
+              max={100}
+              step={5}
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="minScore">Min Score</Label>
-            <Input
+            <NumberInput
               id="minScore"
-              type="number"
-              step="0.1"
-              placeholder="e.g., 2.5"
               value={filters.minScore}
-              onChange={(e) => handleFilterChange('minScore', e.target.value)}
+              onChange={(value) => handleFilterChange('minScore', value)}
+              placeholder="e.g., 2.5"
+              min={-10}
+              max={20}
+              step={0.5}
             />
           </div>
 
@@ -227,20 +360,6 @@ export function ControlPanel() {
               Clear All
             </Button>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Search */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Search Player</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Input
-            placeholder="Type player name..."
-            value={filters.searchTerm}
-            onChange={(e) => handleFilterChange('searchTerm', e.target.value)}
-          />
         </CardContent>
       </Card>
     </div>

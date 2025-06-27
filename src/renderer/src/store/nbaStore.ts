@@ -24,7 +24,7 @@ export interface Filters {
   minAvail: string
   minScore: string
   searchTerm: string
-  view: 'all' | 'top20' | 'top50'
+  view: 'all' | 'top20' | 'top50' | 'top100' | 'top150' | 'top200'
 }
 
 interface NBAState {
@@ -137,6 +137,12 @@ export const useNBAStore = create<NBAState>((set, get) => ({
         dbFilters.limit = 20
       } else if (updatedFilters.view === 'top50') {
         dbFilters.limit = 50
+      } else if (updatedFilters.view === 'top100') {
+        dbFilters.limit = 100
+      } else if (updatedFilters.view === 'top150') {
+        dbFilters.limit = 150
+      } else if (updatedFilters.view === 'top200') {
+        dbFilters.limit = 200
       }
       
       const players = await window.api.db.getPlayersWithFilters(dbFilters)

@@ -15,9 +15,9 @@ import {
   Cell
 } from 'recharts'
 import { useNBAStore } from '../store/nbaStore'
-import { BarChart3, Zap, Grid3X3 } from 'lucide-react'
+import { BarChart3, Zap, Grid3X3, Target, TrendingUp } from 'lucide-react'
 
-type VisualizationType = 'distribution' | 'scatter' | 'heatmap' | null
+type VisualizationType = 'distribution' | 'bubble' | 'heatmap' | 'value' | null
 
 export function Visualizations() {
   const { filteredPlayers } = useNBAStore()
@@ -55,13 +55,43 @@ export function Visualizations() {
     return bins
   }
 
-  const getScatterData = () => {
+  const getValueScoreData = () => {
+    return filteredPlayers.map(player => {
+      // Calculate combined value score (weighted combination of score and availability)
+      // You can adjust these weights based on preference
+      const scoreWeight = 0.7 // 70% weight on performance
+      const availabilityWeight = 0.3 // 30% weight on availability
+      
+      // Normalize total score to 0-100 scale for fair comparison
+      const maxScore = Math.max(...filteredPlayers.map(p => p.total_score))
+      const minScore = Math.min(...filteredPlayers.map(p => p.total_score))
+      const normalizedScore = ((player.total_score - minScore) / (maxScore - minScore)) * 100
+      
+      // Availability is already 0-1, convert to 0-100
+      const availabilityScore = player.availability_rate * 100
+      
+      // Calculate combined value score
+      const valueScore = (normalizedScore * scoreWeight) + (availabilityScore * availabilityWeight)
+      
+      return {
+        name: player.PLAYER_NAME,
+        totalScore: player.total_score,
+        availability: player.availability_rate * 100,
+        valueScore: valueScore,
+        gamesPlayed: player.GP,
+        rank: 0 // Will be set after sorting
+      }
+    }).sort((a, b) => b.valueScore - a.valueScore)
+     .map((player, index) => ({ ...player, rank: index + 1 }))
+  }
+
+  const getBubbleData = () => {
     return filteredPlayers.map(player => ({
       name: player.PLAYER_NAME,
-      gamesPlayed: player.GP,
+      availability: player.availability_rate * 100, // Convert to percentage for X-axis
       totalScore: player.total_score,
-      availability: player.availability_rate,
-      availabilityPercent: Math.round(player.availability_rate * 100)
+      gamesPlayed: player.GP, // This will be bubble size
+      availabilityRate: player.availability_rate // Keep original for color
     }))
   }
 
@@ -72,7 +102,10 @@ export function Visualizations() {
     return topPlayers.map(player => {
       const playerData: any = { name: player.PLAYER_NAME.substring(0, 15) }
       zColumns.forEach(col => {
-        const category = col.replace('z_', '').toUpperCase()
+        let category = col.replace('z_', '').toUpperCase()
+        // Convert percentage categories to use % symbol
+        if (category === 'FT_PCT') category = 'FT%'
+        if (category === 'FG_PCT') category = 'FG%'
         playerData[category] = player[col]
       })
       return playerData
@@ -80,9 +113,9 @@ export function Visualizations() {
   }
 
   const getAvailabilityColor = (availability: number) => {
-    if (availability >= 0.8) return '#22c55e'
-    if (availability >= 0.6) return '#eab308'
-    return '#ef4444'
+    // Create smooth hue gradient from red (0°) to green (120°)
+    const hue = availability * 120
+    return `hsl(${hue}, 70%, 50%)`
   }
 
   const renderDistributionChart = () => {
@@ -116,23 +149,79 @@ export function Visualizations() {
     )
   }
 
-  const renderScatterChart = () => {
-    const data = getScatterData()
+  const renderValueChart = () => {
+    const data = getValueScoreData() // Show all filtered players, not just top 20
     
     return (
-      <ResponsiveContainer width="100%" height={400}>
-        <ScatterChart data={data}>
+      <ResponsiveContainer width="100%" height={500}>
+        <BarChart data={data} margin={{ top: 20, right: 30, bottom: 100, left: 20 }}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis 
+            dataKey="name" 
+            angle={-45}
+            textAnchor="end"
+            height={100}
+            fontSize={8}
+            interval={0}
+          />
+          <YAxis 
+            label={{ value: 'Combined Value Score', angle: -90, position: 'insideLeft' }}
+          />
+          <Tooltip 
+            content={({ active, payload }) => {
+              if (active && payload && payload.length) {
+                const data = payload[0].payload
+                return (
+                  <div className="bg-background border border-border rounded-lg p-3 shadow-lg">
+                    <p className="font-semibold">#{data.rank} {data.name}</p>
+                    <p className="text-sm">Value Score: {data.valueScore.toFixed(1)}</p>
+                    <p className="text-sm">Performance: {data.totalScore.toFixed(2)}</p>
+                    <p className="text-sm">Availability: {data.availability.toFixed(1)}%</p>
+                    <p className="text-sm">Games: {data.gamesPlayed}</p>
+                  </div>
+                )
+              }
+              return null
+            }}
+          />
+          <Bar dataKey="valueScore">
+            {data.map((entry, index) => {
+              // Create gradient based on position in the filtered results
+              const totalPlayers = data.length
+              const percentile = (totalPlayers - index) / totalPlayers
+              const hue = percentile * 120 // 0 (red) to 120 (green)
+              return (
+                <Cell 
+                  key={`cell-${index}`} 
+                  fill={`hsl(${hue}, 70%, 50%)`}
+                />
+              )
+            })}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    )
+  }
+
+  const renderBubbleChart = () => {
+    const data = getBubbleData()
+    
+    return (
+      <ResponsiveContainer width="100%" height={500}>
+        <ScatterChart data={data} margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis 
             type="number" 
-            dataKey="gamesPlayed" 
-            name="Games Played"
-            domain={['dataMin - 5', 'dataMax + 5']}
+            dataKey="availability" 
+            name="Availability %"
+            domain={[0, 100]}
+            label={{ value: 'Availability Rate (%)', position: 'insideBottom', offset: -10 }}
           />
           <YAxis 
             type="number" 
             dataKey="totalScore" 
             name="Total Score"
+            label={{ value: 'Total Score', angle: -90, position: 'insideLeft' }}
           />
           <Tooltip 
             cursor={{ strokeDasharray: '3 3' }}
@@ -142,9 +231,9 @@ export function Visualizations() {
                 return (
                   <div className="bg-background border border-border rounded-lg p-3 shadow-lg">
                     <p className="font-semibold">{data.name}</p>
-                    <p className="text-sm">Games: {data.gamesPlayed}</p>
+                    <p className="text-sm">Availability: {data.availability.toFixed(1)}%</p>
                     <p className="text-sm">Score: {data.totalScore.toFixed(2)}</p>
-                    <p className="text-sm">Availability: {data.availabilityPercent}%</p>
+                    <p className="text-sm">Games: {data.gamesPlayed}</p>
                   </div>
                 )
               }
@@ -153,7 +242,11 @@ export function Visualizations() {
           />
           <Scatter dataKey="totalScore">
             {data.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={getAvailabilityColor(entry.availability)} />
+              <Cell 
+                key={`cell-${index}`} 
+                fill={getAvailabilityColor(entry.availabilityRate)}
+                r={Math.max(3, Math.min(12, entry.gamesPlayed / 7))} // Scale bubble size based on games played
+              />
             ))}
           </Scatter>
         </ScatterChart>
@@ -164,7 +257,13 @@ export function Visualizations() {
   const renderHeatmapView = () => {
     const data = getTopPlayersData()
     const zColumns = Object.keys(filteredPlayers[0] || {}).filter(col => col.startsWith('z_'))
-    const categories = zColumns.map(col => col.replace('z_', '').toUpperCase())
+    const categories = zColumns.map(col => {
+      let category = col.replace('z_', '').toUpperCase()
+      // Convert percentage categories to use % symbol
+      if (category === 'FT_PCT') category = 'FT%'
+      if (category === 'FG_PCT') category = 'FG%'
+      return category
+    })
 
     return (
       <div className="space-y-4">
@@ -250,12 +349,20 @@ export function Visualizations() {
             Score Distribution
           </Button>
           <Button
-            variant={activeViz === 'scatter' ? 'default' : 'outline'}
-            onClick={() => setActiveViz('scatter')}
+            variant={activeViz === 'value' ? 'default' : 'outline'}
+            onClick={() => setActiveViz('value')}
             className="flex items-center gap-2"
           >
-            <Zap className="h-4 w-4" />
-            Games vs Score
+            <TrendingUp className="h-4 w-4" />
+            Combined Value
+          </Button>
+          <Button
+            variant={activeViz === 'bubble' ? 'default' : 'outline'}
+            onClick={() => setActiveViz('bubble')}
+            className="flex items-center gap-2"
+          >
+            <Target className="h-4 w-4" />
+            Value Analysis
           </Button>
           <Button
             variant={activeViz === 'heatmap' ? 'default' : 'outline'}
@@ -296,21 +403,32 @@ export function Visualizations() {
           </Card>
         )}
 
-        {activeViz === 'scatter' && (
+        {activeViz === 'value' && (
           <Card className="h-full">
             <CardHeader>
-              <CardTitle>Games Played vs Total Score</CardTitle>
+              <CardTitle>Combined Value Ranking</CardTitle>
               <CardDescription>
-                Each point represents a player. Color indicates availability rate.
-                <div className="flex gap-2 mt-2">
-                  <Badge className="availability-high">High Availability</Badge>
-                  <Badge className="availability-medium">Medium Availability</Badge>
-                  <Badge className="availability-low">Low Availability</Badge>
-                </div>
+                Showing {filteredPlayers.length} players ranked by combined performance + availability score (70% performance, 30% availability). 
+                Green bars = highest value, red bars = lowest value.
               </CardDescription>
             </CardHeader>
-            <CardContent className="h-96">
-              {renderScatterChart()}
+            <CardContent className="h-[500px]">
+              {renderValueChart()}
+            </CardContent>
+          </Card>
+        )}
+
+        {activeViz === 'bubble' && (
+          <Card className="h-full">
+            <CardHeader>
+              <CardTitle>Value Analysis: Availability vs Performance</CardTitle>
+              <CardDescription>
+                Bubble size represents games played. Color gradient from red (low availability) to green (high availability). 
+                Sweet spot: top-right corner with large bubbles.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="h-[500px]">
+              {renderBubbleChart()}
             </CardContent>
           </Card>
         )}
