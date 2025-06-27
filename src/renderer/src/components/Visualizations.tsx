@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
 import { Badge } from './ui/badge'
@@ -14,7 +14,7 @@ import {
   Scatter,
   Cell
 } from 'recharts'
-import { useNBAStore } from '../store/nbaStore'
+import { useNBAStore, type Player } from '../store/nbaStore'
 import { BarChart3, Zap, Grid3X3, Target, TrendingUp } from 'lucide-react'
 
 type VisualizationType = 'distribution' | 'bubble' | 'heatmap' | 'value' | null
@@ -22,6 +22,20 @@ type VisualizationType = 'distribution' | 'bubble' | 'heatmap' | 'value' | null
 export function Visualizations() {
   const { filteredPlayers } = useNBAStore()
   const [activeViz, setActiveViz] = useState<VisualizationType>(null)
+  const [allPlayersForNormalization, setAllPlayersForNormalization] = useState<Player[]>([])
+
+  // Load all players for consistent normalization when component mounts
+  useEffect(() => {
+    const loadAllPlayers = async () => {
+      try {
+        const allPlayers = await window.api.db.getAllPlayers()
+        setAllPlayersForNormalization(allPlayers)
+      } catch (error) {
+        console.error('Failed to load all players for normalization:', error)
+      }
+    }
+    loadAllPlayers()
+  }, [])
 
   if (filteredPlayers.length === 0) {
     return (
@@ -56,15 +70,22 @@ export function Visualizations() {
   }
 
   const getValueScoreData = () => {
+    // Use all players for normalization to ensure consistent value scores
+    if (allPlayersForNormalization.length === 0) {
+      return [] // Return empty if we haven't loaded the full dataset yet
+    }
+    
+    // Calculate min/max from ALL players in database for consistent normalization
+    const allScores = allPlayersForNormalization.map(p => p.total_score)
+    const maxScore = Math.max(...allScores)
+    const minScore = Math.min(...allScores)
+    
     return filteredPlayers.map(player => {
       // Calculate combined value score (weighted combination of score and availability)
-      // You can adjust these weights based on preference
       const scoreWeight = 0.7 // 70% weight on performance
       const availabilityWeight = 0.3 // 30% weight on availability
       
-      // Normalize total score to 0-100 scale for fair comparison
-      const maxScore = Math.max(...filteredPlayers.map(p => p.total_score))
-      const minScore = Math.min(...filteredPlayers.map(p => p.total_score))
+      // Normalize total score to 0-100 scale using the FULL database range
       const normalizedScore = ((player.total_score - minScore) / (maxScore - minScore)) * 100
       
       // Availability is already 0-1, convert to 0-100
@@ -155,7 +176,6 @@ export function Visualizations() {
     return (
       <ResponsiveContainer width="100%" height={500}>
         <BarChart data={data} margin={{ top: 20, right: 30, bottom: 100, left: 20 }}>
-          <CartesianGrid strokeDasharray="3 3" />
           <XAxis 
             dataKey="name" 
             angle={-45}
