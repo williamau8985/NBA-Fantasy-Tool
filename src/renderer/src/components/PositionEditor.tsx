@@ -3,19 +3,20 @@
 import { useState, useEffect } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog'
 import { Button } from './ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Input } from './ui/input'
 import { ScrollArea } from './ui/scroll-area'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
 import { Badge } from './ui/badge'
+import { Checkbox } from './ui/checkbox'
+import { Progress } from './ui/progress'
 import { useNBAStore, type Player } from '../store/nbaStore'
-import { Edit, Save, X, Search, RotateCcw } from 'lucide-react'
+import { Edit, Save, X, Search, Users } from 'lucide-react'
 
 interface PositionChange {
   id: number
   playerName: string
-  originalPosition: string | null
-  newPosition: string | null
+  originalPositions: string[]
+  newPositions: string[]
 }
 
 export function PositionEditor() {
@@ -23,9 +24,9 @@ export function PositionEditor() {
   const [isOpen, setIsOpen] = useState(false)
   const [positions, setPositions] = useState<string[]>([])
   const [searchTerm, setSearchTerm] = useState('')
-  const [editingId, setEditingId] = useState<number | null>(null)
   const [changes, setChanges] = useState<Map<number, PositionChange>>(new Map())
   const [isSaving, setIsSaving] = useState(false)
+  const [showUnlabeledOnly, setShowUnlabeledOnly] = useState(false)
 
   // Load available positions
   useEffect(() => {
@@ -40,24 +41,66 @@ export function PositionEditor() {
     loadPositions()
   }, [])
 
-  const filteredPlayersForEditor = filteredPlayers.filter(player =>
-    player.PLAYER_NAME.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  // MOVED THIS FUNCTION UP: It needs to be declared before it's used below.
+  const getDisplayPositions = (player: Player): string[] => {
+    const change = changes.get(player.id!)
+    return change ? change.newPositions : (player.positions || [])
+  }
 
-  const handlePositionChange = (player: Player, newPosition: string | null) => {
+  const filteredPlayersForEditor = filteredPlayers.filter(player => {
+    const matchesSearch = player.PLAYER_NAME.toLowerCase().includes(searchTerm.toLowerCase())
+    if (!matchesSearch) return false
+    
+    if (showUnlabeledOnly) {
+      // This call now works because getDisplayPositions is declared above
+      const displayPositions = getDisplayPositions(player)
+      return displayPositions.length === 0
+    }
+    
+    return true
+  })
+
+  // Calculate progress statistics
+  const calculateProgress = () => {
+    let labeledCount = 0
+    let totalCount = filteredPlayers.length
+    
+    filteredPlayers.forEach(player => {
+      // This call now works because getDisplayPositions is declared above
+      const positions = getDisplayPositions(player)
+      if (positions && positions.length > 0) {
+        labeledCount++
+      }
+    })
+    
+    return {
+      labeled: labeledCount,
+      total: totalCount,
+      percentage: totalCount > 0 ? (labeledCount / totalCount) * 100 : 0
+    }
+  }
+
+  const progress = calculateProgress()
+
+  const handlePositionToggle = (player: Player, position: string) => {
     if (!player.id) return
+
+    const currentPositions = getDisplayPositions(player)
+    const newPositions = currentPositions.includes(position)
+      ? currentPositions.filter(p => p !== position)
+      : [...currentPositions, position]
 
     const change: PositionChange = {
       id: player.id,
       playerName: player.PLAYER_NAME,
-      originalPosition: player.position || null,
-      newPosition: newPosition === 'none' ? null : newPosition
+      originalPositions: player.positions || [],
+      newPositions: newPositions
     }
 
     const updatedChanges = new Map(changes)
     
     // If changing back to original, remove from changes
-    if (change.originalPosition === change.newPosition) {
+    if (JSON.stringify(change.originalPositions.sort()) === JSON.stringify(change.newPositions.sort())) {
       updatedChanges.delete(player.id)
     } else {
       updatedChanges.set(player.id, change)
@@ -73,7 +116,7 @@ export function PositionEditor() {
     try {
       const updates = Array.from(changes.values()).map(change => ({
         id: change.id,
-        position: change.newPosition
+        positions: change.newPositions
       }))
 
       await window.api.db.bulkUpdatePositions(updates)
@@ -94,24 +137,32 @@ export function PositionEditor() {
 
   const handleCancelChanges = () => {
     setChanges(new Map())
-    setEditingId(null)
   }
 
-  const getPositionBadgeVariant = (position: string | null | undefined): "default" | "secondary" | "outline" => {
-    if (!position) return "outline"
-    switch (position) {
-      case 'PG': return "default"
-      case 'SG': return "default"
-      case 'SF': return "secondary"
-      case 'PF': return "secondary"
-      case 'C': return "secondary"
-      default: return "outline"
-    }
-  }
-
-  const getDisplayPosition = (player: Player): string | null => {
-    const change = changes.get(player.id!)
-    return change ? change.newPosition : (player.position || null)
+  const PositionBadges = ({ player }: { player: Player }) => {
+    const currentPositions = getDisplayPositions(player)
+    
+    return (
+      <div className="flex flex-wrap gap-2">
+        {positions.map(pos => {
+          const isSelected = currentPositions.includes(pos)
+          return (
+            <Badge
+              key={pos}
+              variant={isSelected ? "default" : "outline"}
+              className={`cursor-pointer transition-all ${
+                isSelected 
+                  ? 'bg-white text-black hover:bg-gray-100' 
+                  : 'bg-gray-900 text-gray-400 hover:bg-gray-800 hover:text-gray-200'
+              }`}
+              onClick={() => handlePositionToggle(player, pos)}
+            >
+              {pos}
+            </Badge>
+          )
+        })}
+      </div>
+    )
   }
 
   return (
@@ -122,24 +173,53 @@ export function PositionEditor() {
           Edit Player Positions
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-4xl max-h-[80vh]">
+      <DialogContent className="max-w-5xl max-h-[80vh]">
         <DialogHeader>
           <DialogTitle>Edit Player Positions</DialogTitle>
           <DialogDescription>
-            Assign or update positions for players. Changes will be saved to the database.
+            Click position badges to toggle them on/off for each player. White = selected, dark = unselected.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Search Bar */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search players..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9"
-            />
+          {/* Progress Bar */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                <span className="text-muted-foreground">Position Assignment Progress</span>
+              </div>
+              <span className="font-medium">
+                {progress.labeled} / {progress.total} players ({progress.percentage.toFixed(1)}%)
+              </span>
+            </div>
+            <Progress value={progress.percentage} className="h-2" />
+          </div>
+
+          {/* Search and Filter Controls */}
+          <div className="flex gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search players..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="show-unlabeled"
+                checked={showUnlabeledOnly}
+                onCheckedChange={(checked) => setShowUnlabeledOnly(checked as boolean)}
+              />
+              <label
+                htmlFor="show-unlabeled"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+              >
+                Show unlabeled only
+              </label>
+            </div>
           </div>
 
           {/* Changes Summary */}
@@ -172,21 +252,39 @@ export function PositionEditor() {
 
           {/* Player List */}
           <ScrollArea className="h-[400px]">
-            <Table>
+            {filteredPlayersForEditor.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full py-8 text-center">
+                <p className="text-lg text-muted-foreground mb-2">
+                  {showUnlabeledOnly && searchTerm 
+                    ? "No unlabeled players match your search"
+                    : showUnlabeledOnly 
+                    ? "All players have positions assigned! 🎉" 
+                    : "No players match your search"}
+                </p>
+                {showUnlabeledOnly && filteredPlayersForEditor.length === 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowUnlabeledOnly(false)}
+                  >
+                    Show all players
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-8">#</TableHead>
-                  <TableHead>Player Name</TableHead>
-                  <TableHead>Current Position</TableHead>
+                  <TableHead className="w-1/4">Player Name</TableHead>
+                  <TableHead className="w-1/2">Positions (click to toggle)</TableHead>
                   <TableHead className="text-right">Score</TableHead>
                   <TableHead className="text-right">Games</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredPlayersForEditor.map((player, index) => {
-                  const isEditing = editingId === player.id
                   const hasChanges = changes.has(player.id!)
-                  const displayPosition = getDisplayPosition(player)
 
                   return (
                     <TableRow 
@@ -197,61 +295,22 @@ export function PositionEditor() {
                         {index + 1}
                       </TableCell>
                       <TableCell className="font-medium">
-                        {player.PLAYER_NAME}
-                        {hasChanges && (
-                          <Badge variant="outline" className="ml-2 text-xs">
-                            Modified
-                          </Badge>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {player.PLAYER_NAME}
+                          {hasChanges && (
+                            <Badge variant="outline" className="text-xs">
+                              Modified
+                            </Badge>
+                          )}
+                          {getDisplayPositions(player).length === 0 && (
+                            <Badge variant="destructive" className="text-xs">
+                              No position
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
-                        {isEditing ? (
-                          <div className="flex items-center gap-2">
-                            <Select
-                              value={displayPosition || ''}
-                              onValueChange={(value) => {
-                                handlePositionChange(player, value)
-                                setEditingId(null)
-                              }}
-                            >
-                              <SelectTrigger className="w-24 h-8">
-                                <SelectValue placeholder="Select..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">None</SelectItem>
-                                {positions.map(pos => (
-                                  <SelectItem key={pos} value={pos}>
-                                    {pos}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-6 w-6"
-                              onClick={() => setEditingId(null)}
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <div 
-                            className="flex items-center gap-2 cursor-pointer group"
-                            onClick={() => setEditingId(player.id!)}
-                          >
-                            {displayPosition ? (
-                              <Badge variant={getPositionBadgeVariant(displayPosition)}>
-                                {displayPosition}
-                              </Badge>
-                            ) : (
-                              <span className="text-muted-foreground text-sm">
-                                No position
-                              </span>
-                            )}
-                            <Edit className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                          </div>
-                        )}
+                        <PositionBadges player={player} />
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
                         {player.total_score.toFixed(2)}
@@ -264,6 +323,7 @@ export function PositionEditor() {
                 })}
               </TableBody>
             </Table>
+            )}
           </ScrollArea>
         </div>
       </DialogContent>

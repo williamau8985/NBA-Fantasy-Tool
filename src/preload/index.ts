@@ -15,8 +15,8 @@ const api = {
     deletePlayer: (id: number) => ipcRenderer.invoke('db:deletePlayer', id),
     getZColumns: () => ipcRenderer.invoke('db:getZColumns'),
     // New position-related functions
-    updatePlayerPosition: (id: number, position: string | null) => ipcRenderer.invoke('db:updatePlayerPosition', id, position),
-    bulkUpdatePositions: (updates: { id: number, position: string | null }[]) => ipcRenderer.invoke('db:bulkUpdatePositions', updates),
+    updatePlayerPositions: (id: number, positions: string[]) => ipcRenderer.invoke('db:updatePlayerPositions', id, positions),
+    bulkUpdatePositions: (updates: { id: number, positions: string[] }[]) => ipcRenderer.invoke('db:bulkUpdatePositions', updates),
     getPositions: () => ipcRenderer.invoke('db:getPositions')
   }
 }

@@ -1,5 +1,3 @@
-// Update src/main/database.ts
-
 import sqlite3 from 'sqlite3'
 import { app } from 'electron'
 import path from 'path'
@@ -21,7 +19,7 @@ export interface Player {
   z_ft_pct: number
   z_fg3m: number
   z_tov: number
-  position?: string // New field for player position
+  positions?: string[] // Changed from position to positions array
 }
 
 export class DatabaseService {
@@ -29,11 +27,9 @@ export class DatabaseService {
   private dbPath: string
 
   constructor() {
-    // Use project directory instead of user data directory
     const projectRoot = app.getAppPath()
     const databaseDir = path.join(projectRoot, 'database')
     
-    // Create database directory if it doesn't exist
     if (!fs.existsSync(databaseDir)) {
       fs.mkdirSync(databaseDir, { recursive: true })
     }
@@ -50,7 +46,7 @@ export class DatabaseService {
         }
         
         this.createTable()
-          .then(() => this.addPositionColumn())
+          .then(() => this.migrateToMultiplePositions())
           .then(() => resolve())
           .catch(reject)
       })
@@ -81,7 +77,7 @@ export class DatabaseService {
           z_ft_pct REAL NOT NULL,
           z_fg3m REAL NOT NULL,
           z_tov REAL NOT NULL,
-          position TEXT,
+          positions TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
@@ -97,15 +93,15 @@ export class DatabaseService {
     })
   }
 
-  // Add position column if it doesn't exist (for migration)
-  private addPositionColumn(): Promise<void> {
+  // Migrate from single position to multiple positions
+  private migrateToMultiplePositions(): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!this.db) {
         reject(new Error('Database not initialized'))
         return
       }
 
-      // Check if column exists
+      // Check if we need to rename column
       this.db.all("PRAGMA table_info(players)", (err, rows: any[]) => {
         if (err) {
           reject(err)
@@ -113,13 +109,21 @@ export class DatabaseService {
         }
 
         const hasPositionColumn = rows.some(row => row.name === 'position')
+        const hasPositionsColumn = rows.some(row => row.name === 'positions')
         
-        if (!hasPositionColumn) {
-          // Add the column
-          this.db!.run("ALTER TABLE players ADD COLUMN position TEXT", (err) => {
+        if (hasPositionColumn && !hasPositionsColumn) {
+          // Rename position to positions
+          this.db!.run("ALTER TABLE players RENAME COLUMN position TO positions", (err) => {
             if (err) {
-              console.error("Error adding position column:", err)
-              // Continue anyway - might already exist
+              console.error("Error renaming position column:", err)
+            }
+            resolve()
+          })
+        } else if (!hasPositionColumn && !hasPositionsColumn) {
+          // Add positions column
+          this.db!.run("ALTER TABLE players ADD COLUMN positions TEXT", (err) => {
+            if (err) {
+              console.error("Error adding positions column:", err)
             }
             resolve()
           })
@@ -130,6 +134,23 @@ export class DatabaseService {
     })
   }
 
+  // Helper to parse positions from JSON string
+  private parsePositions(positionsStr: string | null): string[] {
+    if (!positionsStr) return []
+    try {
+      return JSON.parse(positionsStr)
+    } catch {
+      // Handle legacy single position format
+      return positionsStr ? [positionsStr] : []
+    }
+  }
+
+  // Helper to stringify positions array
+  private stringifyPositions(positions: string[] | null | undefined): string | null {
+    if (!positions || positions.length === 0) return null
+    return JSON.stringify(positions)
+  }
+
   async importFromCSV(csvData: Player[]): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!this.db) {
@@ -137,18 +158,16 @@ export class DatabaseService {
         return
       }
 
-      // Clear existing data
       this.db.run('DELETE FROM players', (err) => {
         if (err) {
           reject(err)
           return
         }
 
-        // Insert new data
         const insertSQL = `
           INSERT INTO players (
             PLAYER_NAME, GP, availability_rate, FT_PCT, total_score,
-            z_pts, z_ast, z_reb, z_stl, z_blk, z_fg_pct, z_ft_pct, z_fg3m, z_tov, position
+            z_pts, z_ast, z_reb, z_stl, z_blk, z_fg_pct, z_ft_pct, z_fg3m, z_tov, positions
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
 
@@ -173,7 +192,7 @@ export class DatabaseService {
             player.z_ft_pct,
             player.z_fg3m,
             player.z_tov,
-            player.position || null
+            this.stringifyPositions(player.positions)
           ], (err) => {
             completed++
             if (err && !hasError) {
@@ -205,7 +224,12 @@ export class DatabaseService {
         if (err) {
           reject(err)
         } else {
-          resolve(rows as Player[])
+          // Parse positions JSON for each player
+          const players = rows.map(row => ({
+            ...row,
+            positions: this.parsePositions(row.positions)
+          }))
+          resolve(players as Player[])
         }
       })
     })
@@ -226,9 +250,8 @@ export class DatabaseService {
         return
       }
 
-      // Build dynamic SQL based on filters and punts
       let selectColumns = [
-        'id', 'PLAYER_NAME', 'GP', 'availability_rate', 'FT_PCT', 'position'
+        'id', 'PLAYER_NAME', 'GP', 'availability_rate', 'FT_PCT', 'positions'
       ]
       
       const zColumns = ['z_pts', 'z_ast', 'z_reb', 'z_stl', 'z_blk', 'z_fg_pct', 'z_ft_pct', 'z_fg3m', 'z_tov']
@@ -236,7 +259,6 @@ export class DatabaseService {
       
       selectColumns = selectColumns.concat(activeCols)
       
-      // Calculate total score based on non-punted columns
       const totalScoreCalc = activeCols.length > 0 
         ? activeCols.join(' + ')
         : '0'
@@ -265,9 +287,10 @@ export class DatabaseService {
         params.push(`%${filters.searchTerm}%`)
       }
 
+      // Filter by position - check if positions JSON contains the position
       if (filters.position) {
-        sql += ' AND position = ?'
-        params.push(filters.position)
+        sql += ' AND positions LIKE ?'
+        params.push(`%"${filters.position}"%`)
       }
 
       if (filters.minScore) {
@@ -286,13 +309,18 @@ export class DatabaseService {
         if (err) {
           reject(err)
         } else {
-          resolve(rows as Player[])
+          // Parse positions JSON for each player
+          const players = rows.map(row => ({
+            ...row,
+            positions: this.parsePositions(row.positions)
+          }))
+          resolve(players as Player[])
         }
       })
     })
   }
 
-  async updatePlayerPosition(id: number, position: string | null): Promise<void> {
+  async updatePlayerPositions(id: number, positions: string[]): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!this.db) {
         reject(new Error('Database not initialized'))
@@ -301,11 +329,11 @@ export class DatabaseService {
 
       const sql = `
         UPDATE players 
-        SET position = ?, updated_at = CURRENT_TIMESTAMP
+        SET positions = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `
 
-      this.db.run(sql, [position, id], (err) => {
+      this.db.run(sql, [this.stringifyPositions(positions), id], (err) => {
         if (err) {
           reject(err)
         } else {
@@ -315,7 +343,7 @@ export class DatabaseService {
     })
   }
 
-  async bulkUpdatePositions(updates: { id: number, position: string | null }[]): Promise<void> {
+  async bulkUpdatePositions(updates: { id: number, positions: string[] }[]): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!this.db) {
         reject(new Error('Database not initialized'))
@@ -324,7 +352,7 @@ export class DatabaseService {
 
       const sql = `
         UPDATE players 
-        SET position = ?, updated_at = CURRENT_TIMESTAMP
+        SET positions = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `
 
@@ -332,8 +360,8 @@ export class DatabaseService {
       let completed = 0
       let hasError = false
 
-      updates.forEach(({ id, position }) => {
-        stmt.run([position, id], (err) => {
+      updates.forEach(({ id, positions }) => {
+        stmt.run([this.stringifyPositions(positions), id], (err) => {
           completed++
           if (err && !hasError) {
             hasError = true
@@ -364,8 +392,13 @@ export class DatabaseService {
       this.db.get(sql, [name], (err, row: any) => {
         if (err) {
           reject(err)
+        } else if (row) {
+          resolve({
+            ...row,
+            positions: this.parsePositions(row.positions)
+          } as Player)
         } else {
-          resolve(row as Player || null)
+          resolve(null)
         }
       })
     })
@@ -392,12 +425,12 @@ export class DatabaseService {
           COUNT(CASE WHEN availability_rate >= 0.9 THEN 1 END) as players_90_plus_avail,
           COUNT(CASE WHEN availability_rate >= 0.8 THEN 1 END) as players_80_plus_avail,
           COUNT(CASE WHEN availability_rate < 0.6 THEN 1 END) as players_under_60_avail,
-          COUNT(CASE WHEN position = 'PG' THEN 1 END) as count_pg,
-          COUNT(CASE WHEN position = 'SG' THEN 1 END) as count_sg,
-          COUNT(CASE WHEN position = 'SF' THEN 1 END) as count_sf,
-          COUNT(CASE WHEN position = 'PF' THEN 1 END) as count_pf,
-          COUNT(CASE WHEN position = 'C' THEN 1 END) as count_c,
-          COUNT(CASE WHEN position IS NULL THEN 1 END) as count_no_position
+          COUNT(CASE WHEN positions LIKE '%"PG"%' THEN 1 END) as count_pg,
+          COUNT(CASE WHEN positions LIKE '%"SG"%' THEN 1 END) as count_sg,
+          COUNT(CASE WHEN positions LIKE '%"SF"%' THEN 1 END) as count_sf,
+          COUNT(CASE WHEN positions LIKE '%"PF"%' THEN 1 END) as count_pf,
+          COUNT(CASE WHEN positions LIKE '%"C"%' THEN 1 END) as count_c,
+          COUNT(CASE WHEN positions IS NULL OR positions = '[]' THEN 1 END) as count_no_position
         FROM players
       `
 
@@ -416,6 +449,14 @@ export class DatabaseService {
       if (!this.db) {
         reject(new Error('Database not initialized'))
         return
+      }
+
+      // Handle positions separately if included in updates
+      if (updates.positions) {
+        updates = {
+          ...updates,
+          positions: this.stringifyPositions(updates.positions) as any
+        }
       }
 
       const fields = Object.keys(updates).filter(key => key !== 'id')
@@ -473,12 +514,10 @@ export class DatabaseService {
     })
   }
 
-  // Utility method to get available z columns
   getZColumns(): string[] {
     return ['z_pts', 'z_ast', 'z_reb', 'z_stl', 'z_blk', 'z_fg_pct', 'z_ft_pct', 'z_fg3m', 'z_tov']
   }
 
-  // Get available positions
   getPositions(): string[] {
     return ['PG', 'SG', 'SF', 'PF', 'C']
   }

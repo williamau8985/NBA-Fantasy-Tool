@@ -240,16 +240,16 @@ app.on('before-quit', async () => {
   }
 })
 
-ipcMain.handle('db:updatePlayerPosition', async (_, id: number, position: string | null) => {
+ipcMain.handle('db:updatePlayerPositions', async (_, id: number, positions: string[]) => {
   try {
-    await dbService.updatePlayerPosition(id, position)
+    await dbService.updatePlayerPositions(id, positions)
     return { success: true }
   } catch (error) {
-    throw new Error(`Failed to update player position: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    throw new Error(`Failed to update player positions: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
 })
 
-ipcMain.handle('db:bulkUpdatePositions', async (_, updates: { id: number, position: string | null }[]) => {
+ipcMain.handle('db:bulkUpdatePositions', async (_, updates: { id: number, positions: string[] }[]) => {
   try {
     await dbService.bulkUpdatePositions(updates)
     return { success: true, count: updates.length }

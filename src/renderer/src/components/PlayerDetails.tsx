@@ -157,14 +157,22 @@ export function PlayerDetails() {
                 <p className="text-2xl font-bold">{selectedPlayer.total_score.toFixed(2)}</p>
               </div>
               <div className="space-y-2">
-                <p className="text-sm font-medium text-muted-foreground">Position</p>
+                <p className="text-sm font-medium text-muted-foreground">Position{selectedPlayer.positions && selectedPlayer.positions.length > 1 ? 's' : ''}</p>
                 <div>
-                  {selectedPlayer.position ? (
-                    <Badge variant={
-                      ['PG', 'SG'].includes(selectedPlayer.position) ? 'default' : 'secondary'
-                    } className="text-lg px-3 py-1">
-                      {selectedPlayer.position}
-                    </Badge>
+                  {selectedPlayer.positions && selectedPlayer.positions.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {selectedPlayer.positions.map(pos => (
+                        <Badge 
+                          key={pos}
+                          variant={
+                            ['PG', 'SG'].includes(pos) ? 'default' : 'secondary'
+                          } 
+                          className="text-lg px-3 py-1"
+                        >
+                          {pos}
+                        </Badge>
+                      ))}
+                    </div>
                   ) : (
                     <span className="text-lg text-muted-foreground">Not assigned</span>
                   )}

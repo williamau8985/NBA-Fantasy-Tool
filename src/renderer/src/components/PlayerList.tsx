@@ -135,12 +135,19 @@ export function PlayerList({ onPlayerSelect }: PlayerListProps) {
                     {player.PLAYER_NAME}
                   </TableCell>
                   <TableCell>
-                    {player.position ? (
-                      <Badge variant={
-                        ['PG', 'SG'].includes(player.position) ? 'default' : 'secondary'
-                      }>
-                        {player.position}
-                      </Badge>
+                    {player.positions && player.positions.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {player.positions.map(pos => (
+                          <Badge 
+                            key={pos}
+                            variant={
+                              ['PG', 'SG'].includes(pos) ? 'default' : 'secondary'
+                            }
+                          >
+                            {pos}
+                          </Badge>
+                        ))}
+                      </div>
                     ) : (
                       <span className="text-xs text-muted-foreground">-</span>
                     )}

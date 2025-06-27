@@ -18,7 +18,7 @@ export interface Player {
   z_ft_pct: number
   z_fg3m: number
   z_tov: number
-  position?: string // Add position field
+  positions?: string[] // Changed to array
 }
 
 export interface Filters {
