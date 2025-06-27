@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { ScrollArea } from './ui/scroll-area'
 import { useNBAStore } from '../store/nbaStore'
 import { RotateCcw, Download, BarChart3, Info, Database, Plus, Minus } from 'lucide-react'
+import { PositionEditor } from './PositionEditor'
 
 // Custom Number Input Component
 interface NumberInputProps {
@@ -114,6 +115,7 @@ export function ControlPanel() {
       minAvail: '',
       minScore: '',
       searchTerm: '',
+      position: '',
       view: 'all'
     })
   }
@@ -136,18 +138,21 @@ export function ControlPanel() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 mb-3">
             <div className="w-2 h-2 bg-green-500 rounded-full"></div>
             <span className="text-sm text-muted-foreground">SQLite Database Connected</span>
           </div>
-          <Button
-            variant="outline"
-            onClick={exportFilteredData}
-            className="w-full mt-3"
-          >
-            <Download className="mr-2 h-4 w-4" />
-            Export Filtered Data
-          </Button>
+          <div className="space-y-2">
+            <PositionEditor />
+            <Button
+              variant="outline"
+              onClick={exportFilteredData}
+              className="w-full"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Export Filtered Data
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -315,6 +320,26 @@ export function ControlPanel() {
           <CardTitle>Filters</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="position">Position</Label>
+            <Select
+              value={filters.position || 'all'}
+              onValueChange={(value) => handleFilterChange('position', value === 'all' ? '' : value)}
+            >
+              <SelectTrigger id="position">
+                <SelectValue placeholder="All positions" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All positions</SelectItem>
+                <SelectItem value="PG">Point Guard (PG)</SelectItem>
+                <SelectItem value="SG">Shooting Guard (SG)</SelectItem>
+                <SelectItem value="SF">Small Forward (SF)</SelectItem>
+                <SelectItem value="PF">Power Forward (PF)</SelectItem>
+                <SelectItem value="C">Center (C)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="minGames">Min Games Played</Label>
             <NumberInput

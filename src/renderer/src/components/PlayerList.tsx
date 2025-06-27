@@ -1,6 +1,6 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
-import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { Badge } from './ui/badge'
+import { ScrollArea } from './ui/scroll-area'
 import { Input } from '@/components/ui/input'
 import { Search } from 'lucide-react'
 import { useNBAStore } from '../store/nbaStore'
@@ -113,6 +113,7 @@ export function PlayerList({ onPlayerSelect }: PlayerListProps) {
               <TableRow>
                 <TableHead className="w-16">Rank</TableHead>
                 <TableHead>Player Name</TableHead>
+                <TableHead>Position</TableHead>
                 <TableHead className="text-right">Score</TableHead>
                 <TableHead className="text-right">Games</TableHead>
                 <TableHead>Availability</TableHead>
@@ -132,6 +133,17 @@ export function PlayerList({ onPlayerSelect }: PlayerListProps) {
                   </TableCell>
                   <TableCell className="font-medium">
                     {player.PLAYER_NAME}
+                  </TableCell>
+                  <TableCell>
+                    {player.position ? (
+                      <Badge variant={
+                        ['PG', 'SG'].includes(player.position) ? 'default' : 'secondary'
+                      }>
+                        {player.position}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">-</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-right font-mono">
                     {player.total_score.toFixed(2)}

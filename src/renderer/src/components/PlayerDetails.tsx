@@ -151,10 +151,24 @@ export function PlayerDetails() {
             <CardTitle>Basic Information</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-3 gap-6">
+            <div className="grid grid-cols-4 gap-6">
               <div className="space-y-2">
                 <p className="text-sm font-medium text-muted-foreground">Total Score</p>
                 <p className="text-2xl font-bold">{selectedPlayer.total_score.toFixed(2)}</p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-muted-foreground">Position</p>
+                <div>
+                  {selectedPlayer.position ? (
+                    <Badge variant={
+                      ['PG', 'SG'].includes(selectedPlayer.position) ? 'default' : 'secondary'
+                    } className="text-lg px-3 py-1">
+                      {selectedPlayer.position}
+                    </Badge>
+                  ) : (
+                    <span className="text-lg text-muted-foreground">Not assigned</span>
+                  )}
+                </div>
               </div>
               <div className="space-y-2">
                 <p className="text-sm font-medium text-muted-foreground">Games Played</p>

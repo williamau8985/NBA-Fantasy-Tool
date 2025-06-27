@@ -6,7 +6,8 @@ import { DatabaseService } from './database'
 import Papa from 'papaparse'
 import fs from 'fs'
 
-let dbService: DatabaseService
+let dbService: DatabaseService | null = null
+
 
 function createWindow(): void {
   // Create the browser window.
@@ -49,12 +50,14 @@ function createWindow(): void {
 
 // Database initialization
 async function initializeDatabase() {
-  dbService = new DatabaseService()
+  const service = new DatabaseService()
   try {
-    await dbService.initialize()
+    await service.initialize()
+    dbService = service
     console.log('Database initialized successfully')
   } catch (error) {
     console.error('Failed to initialize database:', error)
+    throw error
   }
 }
 
@@ -192,16 +195,22 @@ app.whenReady().then(async () => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.nba.fantasy.tool')
 
-  // Initialize database
-  await initializeDatabase()
+  // Initialize database BEFORE creating window
+  try {
+    await initializeDatabase()
+  } catch (error) {
+    console.error('Failed to initialize database:', error)
+    app.quit()
+    return
+  }
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
-  // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  // Create window AFTER database is initialized
   createWindow()
 
   app.on('activate', function () {
@@ -210,7 +219,6 @@ app.whenReady().then(async () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
-
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
@@ -230,4 +238,26 @@ app.on('before-quit', async () => {
   if (dbService) {
     await dbService.close()
   }
+})
+
+ipcMain.handle('db:updatePlayerPosition', async (_, id: number, position: string | null) => {
+  try {
+    await dbService.updatePlayerPosition(id, position)
+    return { success: true }
+  } catch (error) {
+    throw new Error(`Failed to update player position: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+})
+
+ipcMain.handle('db:bulkUpdatePositions', async (_, updates: { id: number, position: string | null }[]) => {
+  try {
+    await dbService.bulkUpdatePositions(updates)
+    return { success: true, count: updates.length }
+  } catch (error) {
+    throw new Error(`Failed to bulk update positions: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+})
+
+ipcMain.handle('db:getPositions', () => {
+  return dbService.getPositions()
 })

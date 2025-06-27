@@ -1,3 +1,5 @@
+// Update src/renderer/src/store/nbaStore.ts
+
 import { create } from 'zustand'
 
 export interface Player {
@@ -16,6 +18,7 @@ export interface Player {
   z_ft_pct: number
   z_fg3m: number
   z_tov: number
+  position?: string // Add position field
 }
 
 export interface Filters {
@@ -24,6 +27,7 @@ export interface Filters {
   minAvail: string
   minScore: string
   searchTerm: string
+  position: string // Add position filter
   view: 'all' | 'top20' | 'top50' | 'top100' | 'top150' | 'top200'
 }
 
@@ -57,6 +61,7 @@ const initialFilters: Filters = {
   minAvail: '',
   minScore: '',
   searchTerm: '',
+  position: '', // Add position to initial filters
   view: 'all'
 }
 
@@ -132,6 +137,11 @@ export const useNBAStore = create<NBAState>((set, get) => ({
         dbFilters.searchTerm = updatedFilters.searchTerm.trim()
       }
       
+      // Add position filter
+      if (updatedFilters.position) {
+        dbFilters.position = updatedFilters.position
+      }
+      
       // Apply view limit
       if (updatedFilters.view === 'top20') {
         dbFilters.limit = 20
@@ -203,7 +213,17 @@ export const useNBAStore = create<NBAState>((set, get) => ({
       statLines.push(`Mean Availability: ${((stats.avg_availability || 0) * 100).toFixed(1)}%`)
       statLines.push(`Players with 90%+ availability: ${stats.players_90_plus_avail || 0}`)
       statLines.push(`Players with 80%+ availability: ${stats.players_80_plus_avail || 0}`)
-      statLines.push(`Players with <60% availability: ${stats.players_under_60_avail || 0}`)
+      statLines.push(`Players with <60% availability: ${stats.players_under_60_avail || 0}\n`)
+      
+      // Position Statistics
+      statLines.push("🏀 POSITION STATISTICS")
+      statLines.push("----------------------------------------")
+      statLines.push(`Point Guards (PG): ${stats.count_pg || 0}`)
+      statLines.push(`Shooting Guards (SG): ${stats.count_sg || 0}`)
+      statLines.push(`Small Forwards (SF): ${stats.count_sf || 0}`)
+      statLines.push(`Power Forwards (PF): ${stats.count_pf || 0}`)
+      statLines.push(`Centers (C): ${stats.count_c || 0}`)
+      statLines.push(`No Position Assigned: ${stats.count_no_position || 0}`)
       
       return statLines.join('\n')
     } catch (error) {
