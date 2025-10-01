@@ -1,7 +1,7 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
 import { Badge } from './ui/badge'
 import { ScrollArea } from './ui/scroll-area'
-import { Input } from '@/components/ui/input'
+import { Input } from './ui/input'
 import { Search } from 'lucide-react'
 import { useNBAStore } from '../store/nbaStore'
 import type { Player } from '../store/nbaStore'
