@@ -3,6 +3,7 @@ import { Badge } from './ui/badge'
 import { Separator } from './ui/separator'
 import { ScrollArea } from './ui/scroll-area'
 import { Progress } from './ui/progress'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { 
   ResponsiveContainer, 
   RadarChart, 
@@ -19,7 +20,12 @@ import {
 import { useNBAStore } from '../store/nbaStore'
 
 export function PlayerDetails() {
-  const { selectedPlayer, getPlayerRank, filteredPlayers } = useNBAStore()
+  const selectedPlayer = useNBAStore(state => state.selectedPlayer)
+  const getPlayerRank = useNBAStore(state => state.getPlayerRank)
+  const filteredPlayers = useNBAStore(state => state.filteredPlayers)
+  const teams = useNBAStore(state => state.teams)
+  const assignPlayerToTeam = useNBAStore(state => state.assignPlayerToTeam)
+  const removePlayerFromTeam = useNBAStore(state => state.removePlayerFromTeam)
 
   if (!selectedPlayer) {
     return (
@@ -58,6 +64,23 @@ export function PlayerDetails() {
   }
 
   const availabilityInfo = getAvailabilityInfo(selectedPlayer.availability_rate)
+  const currentTeamSelection = selectedPlayer.team_id ? String(selectedPlayer.team_id) : 'unassigned'
+
+  const handleTeamAssignmentChange = async (value: string) => {
+    if (!selectedPlayer?.id) {
+      return
+    }
+
+    if (value === 'unassigned') {
+      await removePlayerFromTeam(selectedPlayer.id)
+      return
+    }
+
+    const teamId = Number(value)
+    if (!Number.isNaN(teamId) && teamId !== selectedPlayer.team_id) {
+      await assignPlayerToTeam(teamId, selectedPlayer.id)
+    }
+  }
 
   // Get color based on availability percentage (red to green gradient)
   const getAvailabilityColor = (rate: number) => {
@@ -156,26 +179,56 @@ export function PlayerDetails() {
                 <p className="text-sm font-medium text-muted-foreground">Total Score</p>
                 <p className="text-2xl font-bold">{selectedPlayer.total_score.toFixed(2)}</p>
               </div>
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-muted-foreground">Position{selectedPlayer.positions && selectedPlayer.positions.length > 1 ? 's' : ''}</p>
-                <div>
-                  {selectedPlayer.positions && selectedPlayer.positions.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {selectedPlayer.positions.map(pos => (
-                        <Badge 
-                          key={pos}
-                          variant={
-                            ['PG', 'SG'].includes(pos) ? 'default' : 'secondary'
-                          } 
-                          className="text-lg px-3 py-1"
-                        >
-                          {pos}
-                        </Badge>
-                      ))}
-                    </div>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-muted-foreground">Position{selectedPlayer.positions && selectedPlayer.positions.length > 1 ? 's' : ''}</p>
+                  <div>
+                    {selectedPlayer.positions && selectedPlayer.positions.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {selectedPlayer.positions.map(pos => (
+                          <Badge
+                            key={pos}
+                            variant={
+                              ['PG', 'SG'].includes(pos) ? 'default' : 'secondary'
+                            }
+                            className="text-lg px-3 py-1"
+                          >
+                            {pos}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-lg text-muted-foreground">Not assigned</span>
+                    )}
+                  </div>
+                </div>
+                <Separator />
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-muted-foreground">Team Assignment</p>
+                  {selectedPlayer.team_name ? (
+                    <Badge variant="outline" className="text-lg px-3 py-1">
+                      {selectedPlayer.team_name}
+                    </Badge>
                   ) : (
-                    <span className="text-lg text-muted-foreground">Not assigned</span>
+                    <span className="text-sm text-muted-foreground">Unassigned</span>
                   )}
+                  <Select
+                    value={currentTeamSelection}
+                    onValueChange={handleTeamAssignmentChange}
+                    disabled={!teams.length && !selectedPlayer.team_id}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={teams.length ? 'Assign to team' : 'Create a team first'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unassigned">Unassigned</SelectItem>
+                      {teams.map(team => (
+                        <SelectItem key={team.id} value={String(team.id)}>
+                          {team.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="space-y-2">
@@ -209,7 +262,7 @@ export function PlayerDetails() {
                         <PolarRadiusAxis tick={false} tickLine={false} axisLine={false}>
                           <Label
                             content={({ viewBox }) => {
-                              if (viewBox && "cx" in viewBox && "cy" in viewBox) {
+                              if (viewBox && 'cx' in viewBox && 'cy' in viewBox) {
                                 return (
                                   <text
                                     x={viewBox.cx}
@@ -227,6 +280,7 @@ export function PlayerDetails() {
                                   </text>
                                 )
                               }
+                              return null
                             }}
                           />
                         </PolarRadiusAxis>

@@ -20,6 +20,19 @@ export interface Player {
   z_fg3m: number
   z_tov: number
   positions?: string[] // Changed from position to positions array
+  team_id?: number | null
+  team_name?: string | null
+}
+
+export interface Team {
+  id?: number
+  name: string
+  manager?: string | null
+  notes?: string | null
+}
+
+export interface TeamWithPlayers extends Team {
+  players: Player[]
 }
 
 export class DatabaseService {
@@ -45,7 +58,8 @@ export class DatabaseService {
           return
         }
         
-        this.createTable()
+        this.createPlayersTable()
+          .then(() => this.createTeamsTables())
           .then(() => this.migrateToMultiplePositions())
           .then(() => resolve())
           .catch(reject)
@@ -53,7 +67,7 @@ export class DatabaseService {
     })
   }
 
-  private createTable(): Promise<void> {
+  private createPlayersTable(): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!this.db) {
         reject(new Error('Database not initialized'))
@@ -89,6 +103,55 @@ export class DatabaseService {
         } else {
           resolve()
         }
+      })
+    })
+  }
+
+  private createTeamsTables(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'))
+        return
+      }
+
+      const createTeamsSQL = `
+        CREATE TABLE IF NOT EXISTS teams (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL UNIQUE,
+          manager TEXT,
+          notes TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `
+
+      const createTeamPlayersSQL = `
+        CREATE TABLE IF NOT EXISTS team_players (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          team_id INTEGER NOT NULL,
+          player_id INTEGER NOT NULL UNIQUE,
+          assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE,
+          FOREIGN KEY(player_id) REFERENCES players(id) ON DELETE CASCADE
+        )
+      `
+
+      this.db.serialize(() => {
+        this.db!.run('PRAGMA foreign_keys = ON')
+        this.db!.run(createTeamsSQL, (err) => {
+          if (err) {
+            reject(err)
+            return
+          }
+
+          this.db!.run(createTeamPlayersSQL, (err2) => {
+            if (err2) {
+              reject(err2)
+            } else {
+              resolve()
+            }
+          })
+        })
       })
     })
   }
@@ -158,7 +221,9 @@ export class DatabaseService {
         return
       }
 
-      this.db.run('DELETE FROM players', (err) => {
+      this.db.serialize(() => {
+        this.db!.run('DELETE FROM team_players')
+        this.db!.run('DELETE FROM players', (err) => {
         if (err) {
           reject(err)
           return
@@ -205,6 +270,7 @@ export class DatabaseService {
           })
         })
       })
+      })
     })
   }
 
@@ -216,8 +282,11 @@ export class DatabaseService {
       }
 
       const sql = `
-        SELECT * FROM players 
-        ORDER BY total_score DESC
+        SELECT p.*, tp.team_id as team_id, t.name as team_name
+        FROM players p
+        LEFT JOIN team_players tp ON p.id = tp.player_id
+        LEFT JOIN teams t ON tp.team_id = t.id
+        ORDER BY p.total_score DESC
       `
 
       this.db.all(sql, [], (err, rows: any[]) => {
@@ -264,12 +333,16 @@ export class DatabaseService {
         : '0'
 
       let sql = `
-        SELECT ${selectColumns.join(', ')},
-               (${totalScoreCalc}) as total_score
-        FROM players
+        SELECT ${selectColumns.map(col => `p.${col}`).join(', ')},
+               (${totalScoreCalc}) as total_score,
+               tp.team_id as team_id,
+               t.name as team_name
+        FROM players p
+        LEFT JOIN team_players tp ON p.id = tp.player_id
+        LEFT JOIN teams t ON tp.team_id = t.id
         WHERE 1=1
       `
-      
+
       const params: any[] = []
 
       if (filters.minGames) {
@@ -387,8 +460,14 @@ export class DatabaseService {
         return
       }
 
-      const sql = 'SELECT * FROM players WHERE PLAYER_NAME = ?'
-      
+      const sql = `
+        SELECT p.*, tp.team_id as team_id, t.name as team_name
+        FROM players p
+        LEFT JOIN team_players tp ON p.id = tp.player_id
+        LEFT JOIN teams t ON tp.team_id = t.id
+        WHERE p.PLAYER_NAME = ?
+      `
+
       this.db.get(sql, [name], (err, row: any) => {
         if (err) {
           reject(err)
@@ -399,6 +478,214 @@ export class DatabaseService {
           } as Player)
         } else {
           resolve(null)
+        }
+      })
+    })
+  }
+
+  async getTeams(): Promise<TeamWithPlayers[]> {
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'))
+        return
+      }
+
+      const sql = `
+        SELECT
+          t.id as team_id,
+          t.name,
+          t.manager,
+          t.notes,
+          p.id as player_id,
+          p.PLAYER_NAME,
+          p.GP,
+          p.availability_rate,
+          p.FT_PCT,
+          p.total_score,
+          p.z_pts,
+          p.z_ast,
+          p.z_reb,
+          p.z_stl,
+          p.z_blk,
+          p.z_fg_pct,
+          p.z_ft_pct,
+          p.z_fg3m,
+          p.z_tov,
+          p.positions
+        FROM teams t
+        LEFT JOIN team_players tp ON t.id = tp.team_id
+        LEFT JOIN players p ON tp.player_id = p.id
+        ORDER BY t.name ASC, p.total_score DESC
+      `
+
+      this.db.all(sql, [], (err, rows: any[]) => {
+        if (err) {
+          reject(err)
+          return
+        }
+
+        const teamMap = new Map<number, TeamWithPlayers>()
+
+        rows.forEach(row => {
+          const teamId = row.team_id as number
+          if (!teamMap.has(teamId)) {
+            teamMap.set(teamId, {
+              id: teamId,
+              name: row.name,
+              manager: row.manager,
+              notes: row.notes,
+              players: []
+            })
+          }
+
+          if (row.player_id) {
+            const team = teamMap.get(teamId)
+            if (team) {
+              team.players.push({
+                id: row.player_id,
+                PLAYER_NAME: row.PLAYER_NAME,
+                GP: row.GP,
+                availability_rate: row.availability_rate,
+                FT_PCT: row.FT_PCT,
+                total_score: row.total_score,
+                z_pts: row.z_pts,
+                z_ast: row.z_ast,
+                z_reb: row.z_reb,
+                z_stl: row.z_stl,
+                z_blk: row.z_blk,
+                z_fg_pct: row.z_fg_pct,
+                z_ft_pct: row.z_ft_pct,
+                z_fg3m: row.z_fg3m,
+                z_tov: row.z_tov,
+                positions: this.parsePositions(row.positions),
+                team_id: teamId,
+                team_name: row.name
+              })
+            }
+          }
+        })
+
+        const teams: TeamWithPlayers[] = rows.length === 0
+          ? []
+          : Array.from(teamMap.values())
+
+        resolve(teams)
+      })
+    })
+  }
+
+  async createTeam(team: Team): Promise<Team> {
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'))
+        return
+      }
+
+      const sql = `
+        INSERT INTO teams (name, manager, notes)
+        VALUES (?, ?, ?)
+      `
+
+      this.db.run(sql, [team.name, team.manager || null, team.notes || null], function (err) {
+        if (err) {
+          reject(err)
+        } else {
+          resolve({ ...team, id: this.lastID })
+        }
+      })
+    })
+  }
+
+  async updateTeam(id: number, updates: Partial<Team>): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'))
+        return
+      }
+
+      const fields = Object.keys(updates)
+      if (fields.length === 0) {
+        resolve()
+        return
+      }
+
+      const sql = `
+        UPDATE teams
+        SET ${fields.map(field => `${field} = ?`).join(', ')},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `
+
+      const params = [...fields.map(field => (updates as any)[field]), id]
+
+      this.db.run(sql, params, (err) => {
+        if (err) {
+          reject(err)
+        } else {
+          resolve()
+        }
+      })
+    })
+  }
+
+  async deleteTeam(id: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'))
+        return
+      }
+
+      const sql = 'DELETE FROM teams WHERE id = ?'
+
+      this.db.run(sql, [id], (err) => {
+        if (err) {
+          reject(err)
+        } else {
+          resolve()
+        }
+      })
+    })
+  }
+
+  async assignPlayerToTeam(teamId: number, playerId: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'))
+        return
+      }
+
+      const sql = `
+        INSERT INTO team_players (team_id, player_id)
+        VALUES (?, ?)
+        ON CONFLICT(player_id) DO UPDATE SET
+          team_id = excluded.team_id,
+          assigned_at = CURRENT_TIMESTAMP
+      `
+
+      this.db.run(sql, [teamId, playerId], (err) => {
+        if (err) {
+          reject(err)
+        } else {
+          resolve()
+        }
+      })
+    })
+  }
+
+  async removePlayerFromTeam(playerId: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'))
+        return
+      }
+
+      const sql = 'DELETE FROM team_players WHERE player_id = ?'
+
+      this.db.run(sql, [playerId], (err) => {
+        if (err) {
+          reject(err)
+        } else {
+          resolve()
         }
       })
     })

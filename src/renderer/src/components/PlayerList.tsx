@@ -113,6 +113,7 @@ export function PlayerList({ onPlayerSelect }: PlayerListProps) {
               <TableRow>
                 <TableHead className="w-16">Rank</TableHead>
                 <TableHead>Player Name</TableHead>
+                <TableHead>Team</TableHead>
                 <TableHead>Position</TableHead>
                 <TableHead className="text-right">Score</TableHead>
                 <TableHead className="text-right">Games</TableHead>
@@ -133,6 +134,9 @@ export function PlayerList({ onPlayerSelect }: PlayerListProps) {
                   </TableCell>
                   <TableCell className="font-medium">
                     {player.PLAYER_NAME}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                    {player.team_name || 'Unassigned'}
                   </TableCell>
                   <TableCell>
                     {player.positions && player.positions.length > 0 ? (
