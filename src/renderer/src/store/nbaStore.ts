@@ -19,6 +19,16 @@ export interface Player {
   z_fg3m: number
   z_tov: number
   positions?: string[] // Changed to array
+  team_id?: number | null
+  team_name?: string | null
+}
+
+export interface Team {
+  id: number
+  name: string
+  manager?: string | null
+  notes?: string | null
+  players: Player[]
 }
 
 export interface Filters {
@@ -34,12 +44,15 @@ export interface Filters {
 interface NBAState {
   // Data
   filteredPlayers: Player[]
+  allPlayers: Player[]
   selectedPlayer: Player | null
-  
+  teams: Team[]
+
   // UI State
   isLoading: boolean
+  teamsLoading: boolean
   error: string | null
-  
+
   // Filters
   filters: Filters
   availableCategories: string[]
@@ -53,6 +66,12 @@ interface NBAState {
   loadInitialData: () => Promise<void>
   updatePlayer: (id: number, updates: Partial<Player>) => Promise<void>
   deletePlayer: (id: number) => Promise<void>
+  loadTeams: () => Promise<void>
+  createTeam: (team: { name: string; manager?: string | null; notes?: string | null }) => Promise<void>
+  updateTeam: (id: number, updates: Partial<Team>) => Promise<void>
+  deleteTeam: (id: number) => Promise<void>
+  assignPlayerToTeam: (teamId: number, playerId: number) => Promise<void>
+  removePlayerFromTeam: (playerId: number) => Promise<void>
 }
 
 const initialFilters: Filters = {
@@ -68,31 +87,40 @@ const initialFilters: Filters = {
 export const useNBAStore = create<NBAState>((set, get) => ({
   // Initial state
   filteredPlayers: [],
+  allPlayers: [],
   selectedPlayer: null,
+  teams: [],
   isLoading: false,
+  teamsLoading: false,
   error: null,
   filters: initialFilters,
   availableCategories: [],
 
   // Load initial data from database
   loadInitialData: async () => {
-    set({ isLoading: true, error: null })
-    
+    set({ isLoading: true, teamsLoading: true, error: null })
+
     try {
       // Get available z columns
       const zColumns = await window.api.db.getZColumns()
-      set({ availableCategories: zColumns })
-      
-      // Load all players
-      const players = await window.api.db.getAllPlayers()
-      set({ 
+      const [players, teams] = await Promise.all([
+        window.api.db.getAllPlayers(),
+        window.api.db.getTeams()
+      ])
+
+      set({
+        availableCategories: zColumns,
         filteredPlayers: players,
-        isLoading: false 
+        allPlayers: players,
+        teams,
+        isLoading: false,
+        teamsLoading: false
       })
     } catch (error) {
-      set({ 
+      set({
         error: `Failed to load data: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        isLoading: false 
+        isLoading: false,
+        teamsLoading: false
       })
     }
   },
@@ -155,17 +183,29 @@ export const useNBAStore = create<NBAState>((set, get) => ({
         dbFilters.limit = 200
       }
       
-      const players = await window.api.db.getPlayersWithFilters(dbFilters)
-      
-      set({ 
+      const [players, allPlayers] = await Promise.all([
+        window.api.db.getPlayersWithFilters(dbFilters),
+        window.api.db.getAllPlayers()
+      ])
+
+      const { selectedPlayer } = get()
+      let updatedSelected: Player | null = null
+
+      if (selectedPlayer) {
+        updatedSelected = allPlayers.find(player => player.id === selectedPlayer.id) || null
+      }
+
+      set({
         filteredPlayers: players,
-        isLoading: false 
+        allPlayers,
+        selectedPlayer: updatedSelected,
+        isLoading: false
       })
-      
+
     } catch (error) {
-      set({ 
+      set({
         error: `Failed to apply filters: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        isLoading: false 
+        isLoading: false
       })
     }
   },
@@ -269,13 +309,13 @@ export const useNBAStore = create<NBAState>((set, get) => ({
   // Update player in database
   updatePlayer: async (id: number, updates: Partial<Player>) => {
     set({ isLoading: true })
-    
+
     try {
       await window.api.db.updatePlayer(id, updates)
-      
+
       // Refresh the filtered players list
       await get().applyFilters({})
-      
+
       // Update selected player if it's the one being updated
       const { selectedPlayer } = get()
       if (selectedPlayer && selectedPlayer.id === id) {
@@ -284,11 +324,11 @@ export const useNBAStore = create<NBAState>((set, get) => ({
           set({ selectedPlayer: updatedPlayer })
         }
       }
-      
+
     } catch (error) {
-      set({ 
+      set({
         error: `Failed to update player: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        isLoading: false 
+        isLoading: false
       })
     }
   },
@@ -299,21 +339,82 @@ export const useNBAStore = create<NBAState>((set, get) => ({
     
     try {
       await window.api.db.deletePlayer(id)
-      
+
       // Clear selected player if it was deleted
       const { selectedPlayer } = get()
       if (selectedPlayer && selectedPlayer.id === id) {
         set({ selectedPlayer: null })
       }
-      
+
       // Refresh the filtered players list
       await get().applyFilters({})
-      
+
     } catch (error) {
-      set({ 
+      set({
         error: `Failed to delete player: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        isLoading: false 
+        isLoading: false
       })
+    }
+  },
+
+  loadTeams: async () => {
+    set({ teamsLoading: true })
+    try {
+      const teams = await window.api.db.getTeams()
+      set({ teams, teamsLoading: false })
+    } catch (error) {
+      set({
+        error: `Failed to load teams: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        teamsLoading: false
+      })
+    }
+  },
+
+  createTeam: async (team) => {
+    try {
+      await window.api.db.createTeam(team)
+      await get().loadTeams()
+    } catch (error) {
+      set({ error: `Failed to create team: ${error instanceof Error ? error.message : 'Unknown error'}` })
+    }
+  },
+
+  updateTeam: async (id, updates) => {
+    try {
+      await window.api.db.updateTeam(id, updates)
+      await get().loadTeams()
+    } catch (error) {
+      set({ error: `Failed to update team: ${error instanceof Error ? error.message : 'Unknown error'}` })
+    }
+  },
+
+  deleteTeam: async (id) => {
+    try {
+      await window.api.db.deleteTeam(id)
+      await get().applyFilters({})
+      await get().loadTeams()
+    } catch (error) {
+      set({ error: `Failed to delete team: ${error instanceof Error ? error.message : 'Unknown error'}` })
+    }
+  },
+
+  assignPlayerToTeam: async (teamId, playerId) => {
+    try {
+      await window.api.db.assignPlayerToTeam(teamId, playerId)
+      await get().applyFilters({})
+      await get().loadTeams()
+    } catch (error) {
+      set({ error: `Failed to assign player: ${error instanceof Error ? error.message : 'Unknown error'}` })
+    }
+  },
+
+  removePlayerFromTeam: async (playerId) => {
+    try {
+      await window.api.db.removePlayerFromTeam(playerId)
+      await get().applyFilters({})
+      await get().loadTeams()
+    } catch (error) {
+      set({ error: `Failed to remove player: ${error instanceof Error ? error.message : 'Unknown error'}` })
     }
   }
 }))

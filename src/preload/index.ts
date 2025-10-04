@@ -14,6 +14,12 @@ const api = {
     updatePlayer: (id: number, updates: any) => ipcRenderer.invoke('db:updatePlayer', id, updates),
     deletePlayer: (id: number) => ipcRenderer.invoke('db:deletePlayer', id),
     getZColumns: () => ipcRenderer.invoke('db:getZColumns'),
+    getTeams: () => ipcRenderer.invoke('db:getTeams'),
+    createTeam: (team: any) => ipcRenderer.invoke('db:createTeam', team),
+    updateTeam: (id: number, updates: any) => ipcRenderer.invoke('db:updateTeam', id, updates),
+    deleteTeam: (id: number) => ipcRenderer.invoke('db:deleteTeam', id),
+    assignPlayerToTeam: (teamId: number, playerId: number) => ipcRenderer.invoke('db:assignPlayerToTeam', teamId, playerId),
+    removePlayerFromTeam: (playerId: number) => ipcRenderer.invoke('db:removePlayerFromTeam', playerId),
     // New position-related functions
     updatePlayerPositions: (id: number, positions: string[]) => ipcRenderer.invoke('db:updatePlayerPositions', id, positions),
     bulkUpdatePositions: (updates: { id: number, positions: string[] }[]) => ipcRenderer.invoke('db:bulkUpdatePositions', updates),

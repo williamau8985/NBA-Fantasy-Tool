@@ -4,6 +4,7 @@ import { ControlPanel } from './components/ControlPanel'
 import { PlayerList } from './components/PlayerList'
 import { PlayerDetails } from './components/PlayerDetails'
 import { Visualizations } from './components/Visualizations'
+import { TeamsSection } from './components/TeamsSection'
 import { useNBAStore } from './store/nbaStore'
 import './globals.css'
 
@@ -29,12 +30,13 @@ function App() {
       {/* Right Panel - Data Display */}
       <div className="flex-1 flex flex-col">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-          <TabsList className="grid w-full grid-cols-3 m-4 mb-0">
+          <TabsList className="grid w-full grid-cols-4 m-4 mb-0">
             <TabsTrigger value="players">Player List ({filteredPlayers.length})</TabsTrigger>
             <TabsTrigger value="details" disabled={!selectedPlayer}>
               Player Details
             </TabsTrigger>
             <TabsTrigger value="visualizations">Visualizations</TabsTrigger>
+            <TabsTrigger value="teams">Teams</TabsTrigger>
           </TabsList>
 
           <div className="flex-1 p-4 pt-2 overflow-hidden">
@@ -48,6 +50,10 @@ function App() {
 
             <TabsContent value="visualizations" className="h-full">
               <Visualizations />
+            </TabsContent>
+
+            <TabsContent value="teams" className="h-full">
+              <TeamsSection />
             </TabsContent>
           </div>
         </Tabs>

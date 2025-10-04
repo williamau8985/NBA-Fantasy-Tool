@@ -1,15 +1,14 @@
-import { useRef, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Checkbox } from './ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
-import { Separator } from './ui/separator'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog'
 import { ScrollArea } from './ui/scroll-area'
 import { useNBAStore } from '../store/nbaStore'
-import { RotateCcw, Download, BarChart3, Info, Database, Plus, Minus } from 'lucide-react'
+import { RotateCcw, Download, Info, Database, Plus, Minus } from 'lucide-react'
 import { PositionEditor } from './PositionEditor'
 
 // Custom Number Input Component
@@ -84,7 +83,6 @@ export function ControlPanel() {
   const {
     filters,
     availableCategories,
-    isLoading,
     error,
     applyFilters,
     exportFilteredData,

@@ -8,6 +8,12 @@ import fs from 'fs'
 
 let dbService: DatabaseService | null = null
 
+function getDatabase(): DatabaseService {
+  if (!dbService) {
+    throw new Error('Database service is not initialized')
+  }
+  return dbService
+}
 
 function createWindow(): void {
   // Create the browser window.
@@ -20,13 +26,13 @@ function createWindow(): void {
     backgroundColor: '#0f172a', // Dark background color
     titleBarStyle: process.platform === 'darwin' ? 'default' : 'default',
     vibrancy: process.platform === 'darwin' ? 'appearance-based' : undefined,
-    webSecurity: false,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
       nodeIntegration: false,
-      contextIsolation: true
+      contextIsolation: true,
+      webSecurity: false
     }
   })
 
@@ -118,7 +124,7 @@ ipcMain.handle('db:importCsv', async (_, filePath: string) => {
               total_score: zColumns.reduce((sum, col) => sum + (player[col] || 0), 0)
             }))
             
-            await dbService.importFromCSV(dataWithScores)
+            await getDatabase().importFromCSV(dataWithScores)
             resolve({ success: true, count: dataWithScores.length })
           } catch (error) {
             reject(error)
@@ -136,7 +142,7 @@ ipcMain.handle('db:importCsv', async (_, filePath: string) => {
 
 ipcMain.handle('db:getAllPlayers', async () => {
   try {
-    return await dbService.getAllPlayers()
+    return await getDatabase().getAllPlayers()
   } catch (error) {
     throw new Error(`Failed to get players: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
@@ -144,7 +150,7 @@ ipcMain.handle('db:getAllPlayers', async () => {
 
 ipcMain.handle('db:getPlayersWithFilters', async (_, filters) => {
   try {
-    return await dbService.getPlayersWithFilters(filters)
+    return await getDatabase().getPlayersWithFilters(filters)
   } catch (error) {
     throw new Error(`Failed to get filtered players: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
@@ -152,7 +158,7 @@ ipcMain.handle('db:getPlayersWithFilters', async (_, filters) => {
 
 ipcMain.handle('db:getPlayerByName', async (_, name: string) => {
   try {
-    return await dbService.getPlayerByName(name)
+    return await getDatabase().getPlayerByName(name)
   } catch (error) {
     throw new Error(`Failed to get player: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
@@ -160,7 +166,7 @@ ipcMain.handle('db:getPlayerByName', async (_, name: string) => {
 
 ipcMain.handle('db:getStatistics', async () => {
   try {
-    return await dbService.getStatistics()
+    return await getDatabase().getStatistics()
   } catch (error) {
     throw new Error(`Failed to get statistics: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
@@ -168,7 +174,7 @@ ipcMain.handle('db:getStatistics', async () => {
 
 ipcMain.handle('db:updatePlayer', async (_, id: number, updates) => {
   try {
-    await dbService.updatePlayer(id, updates)
+    await getDatabase().updatePlayer(id, updates)
     return { success: true }
   } catch (error) {
     throw new Error(`Failed to update player: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -177,7 +183,7 @@ ipcMain.handle('db:updatePlayer', async (_, id: number, updates) => {
 
 ipcMain.handle('db:deletePlayer', async (_, id: number) => {
   try {
-    await dbService.deletePlayer(id)
+    await getDatabase().deletePlayer(id)
     return { success: true }
   } catch (error) {
     throw new Error(`Failed to delete player: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -185,7 +191,59 @@ ipcMain.handle('db:deletePlayer', async (_, id: number) => {
 })
 
 ipcMain.handle('db:getZColumns', () => {
-  return dbService.getZColumns()
+  return getDatabase().getZColumns()
+})
+
+ipcMain.handle('db:getTeams', async () => {
+  try {
+    return await getDatabase().getTeams()
+  } catch (error) {
+    throw new Error(`Failed to get teams: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+})
+
+ipcMain.handle('db:createTeam', async (_, team) => {
+  try {
+    return await getDatabase().createTeam(team)
+  } catch (error) {
+    throw new Error(`Failed to create team: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+})
+
+ipcMain.handle('db:updateTeam', async (_, id: number, updates) => {
+  try {
+    await getDatabase().updateTeam(id, updates)
+    return { success: true }
+  } catch (error) {
+    throw new Error(`Failed to update team: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+})
+
+ipcMain.handle('db:deleteTeam', async (_, id: number) => {
+  try {
+    await getDatabase().deleteTeam(id)
+    return { success: true }
+  } catch (error) {
+    throw new Error(`Failed to delete team: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+})
+
+ipcMain.handle('db:assignPlayerToTeam', async (_, teamId: number, playerId: number) => {
+  try {
+    await getDatabase().assignPlayerToTeam(teamId, playerId)
+    return { success: true }
+  } catch (error) {
+    throw new Error(`Failed to assign player: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+})
+
+ipcMain.handle('db:removePlayerFromTeam', async (_, playerId: number) => {
+  try {
+    await getDatabase().removePlayerFromTeam(playerId)
+    return { success: true }
+  } catch (error) {
+    throw new Error(`Failed to remove player: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
 })
 
 // This method will be called when Electron has finished
@@ -242,7 +300,7 @@ app.on('before-quit', async () => {
 
 ipcMain.handle('db:updatePlayerPositions', async (_, id: number, positions: string[]) => {
   try {
-    await dbService.updatePlayerPositions(id, positions)
+    await getDatabase().updatePlayerPositions(id, positions)
     return { success: true }
   } catch (error) {
     throw new Error(`Failed to update player positions: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -251,7 +309,7 @@ ipcMain.handle('db:updatePlayerPositions', async (_, id: number, positions: stri
 
 ipcMain.handle('db:bulkUpdatePositions', async (_, updates: { id: number, positions: string[] }[]) => {
   try {
-    await dbService.bulkUpdatePositions(updates)
+    await getDatabase().bulkUpdatePositions(updates)
     return { success: true, count: updates.length }
   } catch (error) {
     throw new Error(`Failed to bulk update positions: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -259,5 +317,5 @@ ipcMain.handle('db:bulkUpdatePositions', async (_, updates: { id: number, positi
 })
 
 ipcMain.handle('db:getPositions', () => {
-  return dbService.getPositions()
+  return getDatabase().getPositions()
 })

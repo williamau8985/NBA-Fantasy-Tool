@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
-import { Badge } from './ui/badge'
 import { 
   ResponsiveContainer, 
   BarChart, 
@@ -15,7 +14,7 @@ import {
   Cell
 } from 'recharts'
 import { useNBAStore, type Player } from '../store/nbaStore'
-import { BarChart3, Zap, Grid3X3, Target, TrendingUp } from 'lucide-react'
+import { BarChart3, Grid3X3, Target, TrendingUp } from 'lucide-react'
 
 type VisualizationType = 'distribution' | 'bubble' | 'heatmap' | 'value' | null
 
@@ -205,7 +204,7 @@ export function Visualizations() {
             }}
           />
           <Bar dataKey="valueScore">
-            {data.map((entry, index) => {
+            {data.map((_entry, index) => {
               // Create gradient based on position in the filtered results
               const totalPlayers = data.length
               const percentile = (totalPlayers - index) / totalPlayers
